@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      # End-to-end tests skip themselves here; they run in the e2e job.
+      - run: cargo test --workspace
+      - run: cargo build --release -p infrasonic
+
+  e2e:
+    name: End-to-end (Navidrome, gonic)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Pull server images
+        run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
+      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic --tests
+      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic --tests
+
+  wasm:
+    name: WebAssembly spike
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p infrasonic-subsonic -p infrasonic-engine --target wasm32-unknown-unknown
+      - run: cargo check -p infrasonic-engine --features cpal/wasm-bindgen --target wasm32-unknown-unknown
+      - name: wasm-bindgen CLI
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name=="wasm-bindgen") | .version')
+          cargo install wasm-bindgen-cli --version "$v" --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright
+        working-directory: crates/web-spike
+        run: npm install --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: scripts/web-spike.sh
+
+  android:
+    name: Android build check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Check for aarch64-linux-android
+        run: |
+          TC="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$TC/aarch64-linux-android26-clang"
+          export AR_aarch64_linux_android="$TC/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+          cargo check --target aarch64-linux-android -p infrasonic-engine -p infrasonic-subsonic
+          cargo check --target aarch64-linux-android -p infrasonic-core --no-default-features
+
+  deny:
+    name: Licenses and advisories
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

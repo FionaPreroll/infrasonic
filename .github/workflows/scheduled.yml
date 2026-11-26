@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Long-running checks: fuzzing and the soak test. Nightly, and on demand.
+name: Fuzz and soak
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: Seconds per fuzz target
+        default: "600"
+      soak_seconds:
+        description: Soak test duration per server in seconds
+        default: "1800"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [subsonic_response, config, decode, queue, stream_reader]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - run: scripts/fuzz.sh "${{ inputs.fuzz_seconds || '600' }}" ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts
+
+  soak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release --no-run -p infrasonic-e2e --test soak
+      - name: Soak
+        env:
+          INFRASONIC_SOAK_SECS: ${{ inputs.soak_seconds || '1800' }}
+          INFRASONIC_SOAK_SEED: ${{ github.run_id }}
+        run: scripts/e2e-servers.sh cargo test --release -p infrasonic-e2e --test soak -- --nocapture
