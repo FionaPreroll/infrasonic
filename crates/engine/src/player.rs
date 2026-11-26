@@ -11,6 +11,7 @@ use rtrb::Producer;
 
 use crate::convert::{RateConverter, map_channels};
 use crate::decode::TrackDecoder;
+use crate::gain::{ReplayGain, ReplayGainConfig, db_to_linear};
 use crate::output::{AudioOutput, OutputFactory, OutputShared, OutputSpec};
 use crate::queue::{Queue, QueueEntry, RepeatMode};
 use crate::{Error, SourceProvider, Track, volume_to_gain};
@@ -50,6 +51,8 @@ pub enum Command {
     SeekBy(f64),
     /// Volume 0–100.
     SetVolume(u8),
+    /// Change ReplayGain settings (applies from the next decoded audio on).
+    SetReplayGain(ReplayGainConfig),
     /// Update the metadata of all entries with this track id (e.g. after starring).
     UpdateTrack(Track),
     Shutdown,
@@ -98,6 +101,8 @@ pub struct Snapshot {
     pub repeat: RepeatMode,
     pub queue: Arc<Vec<QueueEntry>>,
     pub underruns: u64,
+    /// ReplayGain applied to the audible track in dB (`None` when ReplayGain is off).
+    pub replay_gain_db: Option<f32>,
 }
 
 /// Engine settings.
@@ -108,6 +113,7 @@ pub struct EngineConfig {
     /// Open the next track while the current one plays (needed for gapless playback).
     pub preload_next: bool,
     pub volume: u8,
+    pub replay_gain: ReplayGainConfig,
 }
 
 impl Default for EngineConfig {
@@ -116,6 +122,7 @@ impl Default for EngineConfig {
             buffer: Duration::from_millis(750),
             preload_next: true,
             volume: 100,
+            replay_gain: ReplayGainConfig::default(),
         }
     }
 }
@@ -174,6 +181,21 @@ impl Engine {
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot.read().clone()
     }
+
+    /// A handle that reads the current state from other threads.
+    pub fn snapshot_reader(&self) -> SnapshotReader {
+        SnapshotReader(self.snapshot.clone())
+    }
+}
+
+/// Reads engine snapshots; cheap to clone and usable from any thread.
+#[derive(Debug, Clone)]
+pub struct SnapshotReader(Arc<RwLock<Snapshot>>);
+
+impl SnapshotReader {
+    pub fn get(&self) -> Snapshot {
+        self.0.read().clone()
+    }
 }
 
 impl Drop for Engine {
@@ -204,12 +226,66 @@ struct Loaded {
 struct Active {
     uid: u64,
     dec: TrackDecoder,
-    conv: Option<RateConverter>,
-    conv_key: (u32, usize),
+    /// Linear ReplayGain factor.
+    gain: f32,
+    done: bool,
+}
+
+/// Converted samples on their way to the output. One converter is shared by consecutive
+/// tracks with the same sample rate, so resampled transitions stay gapless.
+#[derive(Default)]
+struct Pipe {
+    /// Converter and its input rate.
+    conv: Option<(RateConverter, u32)>,
+    /// Output frames produced before the converter started.
+    conv_origin: u64,
+    /// Output frames produced so far (written to the ring buffer or still in `pending`).
+    produced: u64,
     pending: Vec<f32>,
     pending_pos: usize,
     scratch: Vec<f32>,
-    done: bool,
+}
+
+impl Pipe {
+    /// Output frame at which the next input frame will be heard.
+    fn boundary(&self) -> u64 {
+        match &self.conv {
+            Some((c, _)) => self.conv_origin + c.output_for(c.input_frames()),
+            None => self.produced,
+        }
+    }
+
+    fn has_pending(&self) -> bool {
+        self.pending_pos < self.pending.len()
+    }
+
+    fn compact(&mut self) {
+        if self.pending_pos >= self.pending.len() {
+            self.pending.clear();
+            self.pending_pos = 0;
+        }
+    }
+
+    /// Convert `input` (already in the output channel layout) and queue it.
+    fn feed(&mut self, ch: usize, input: &[f32]) {
+        self.compact();
+        let before = self.pending.len();
+        match &mut self.conv {
+            Some((c, _)) => c.process(input, &mut self.pending),
+            None => self.pending.extend_from_slice(input),
+        }
+        self.produced += ((self.pending.len() - before) / ch) as u64;
+    }
+
+    /// Flush the converter (before a rate change or at the end of the queue).
+    fn finish_conv(&mut self, ch: usize) {
+        if let Some((mut c, _)) = self.conv.take() {
+            self.compact();
+            let before = self.pending.len();
+            c.finish(&mut self.pending);
+            self.produced += ((self.pending.len() - before) / ch) as u64;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -218,6 +294,7 @@ struct Segment {
     uid: u64,
     offset: f64,
     duration: Option<f64>,
+    gain_db: Option<f32>,
 }
 
 struct Worker {
@@ -250,10 +327,12 @@ struct Worker {
     waiting_next: Option<u64>,
     end_of_queue: bool,
     segments: VecDeque<Segment>,
+    pipe: Pipe,
     frames_written: u64,
     current_uid: Option<u64>,
     position: f64,
     duration: Option<f64>,
+    gain_db: Option<f32>,
     volume: u8,
     last_position_event: Instant,
     failures_in_row: usize,
@@ -300,10 +379,12 @@ impl Worker {
             waiting_next: None,
             end_of_queue: false,
             segments: VecDeque::new(),
+            pipe: Pipe::default(),
             frames_written: 0,
             current_uid: None,
             position: 0.0,
             duration: None,
+            gain_db: None,
             volume,
             last_position_event: Instant::now(),
             failures_in_row: 0,
@@ -458,6 +539,19 @@ impl Worker {
                 self.shared.set_gain(volume_to_gain(self.volume));
                 self.emit(Event::VolumeChanged(self.volume));
             }
+            Command::SetReplayGain(rg) => {
+                self.config.replay_gain = rg;
+                if let Some(uid) = self.active.as_ref().map(|a| a.uid) {
+                    let file_rg = self.active.as_ref().and_then(|a| a.dec.replay_gain());
+                    let db = self.gain_for(uid, file_rg);
+                    if let Some(a) = &mut self.active {
+                        a.gain = db.map_or(1.0, db_to_linear);
+                    }
+                    if self.current_uid == Some(uid) {
+                        self.gain_db = db;
+                    }
+                }
+            }
             Command::UpdateTrack(track) => {
                 if self.queue.update_tracks(&track) {
                     self.touch_queue();
@@ -541,6 +635,7 @@ impl Worker {
             }
         }
         self.frames_written = 0;
+        self.pipe = Pipe::default();
         self.segments.clear();
     }
 
@@ -711,22 +806,54 @@ impl Worker {
                 .and_then(|i| self.queue.get(i))
                 .and_then(|e| e.track.duration)
         });
+        let gain_db = self.gain_for(uid, dec.replay_gain());
+        if self.segments.is_empty() {
+            self.gain_db = gain_db;
+        }
         self.segments.push_back(Segment {
-            start_frame: self.frames_written,
+            start_frame: self.pipe.boundary(),
             uid,
             offset,
             duration,
+            gain_db,
         });
         self.active = Some(Active {
             uid,
-            conv: None,
-            conv_key: (0, 0),
             dec,
-            pending: Vec::new(),
-            pending_pos: 0,
-            scratch: Vec::new(),
+            gain: gain_db.map_or(1.0, db_to_linear),
             done: false,
         });
+    }
+
+    /// ReplayGain in dB for queue entry `uid`. Server values come first, file tags fill in.
+    fn gain_for(&self, uid: u64, file: Option<ReplayGain>) -> Option<f32> {
+        let idx = self.queue.index_of(uid);
+        let entry = idx.and_then(|i| self.queue.get(i));
+        let rg = entry
+            .and_then(|e| e.track.replay_gain)
+            .unwrap_or_default()
+            .or(file);
+        let rg = (!rg.is_empty()).then_some(rg);
+        // Album context: a neighbour in the queue is from the same album.
+        let album_context = match (idx, entry) {
+            (Some(i), Some(e)) => {
+                let key = |t: &Track| {
+                    t.album_id
+                        .clone()
+                        .filter(|a| !a.is_empty())
+                        .or_else(|| (!t.album.is_empty()).then(|| t.album.clone()))
+                };
+                let mine = key(&e.track);
+                let same = |j: usize| {
+                    self.queue
+                        .get(j)
+                        .is_some_and(|n| mine.is_some() && key(&n.track) == mine)
+                };
+                (i > 0 && same(i - 1)) || same(i + 1)
+            }
+            _ => false,
+        };
+        self.config.replay_gain.gain_db(rg.as_ref(), album_context)
     }
 
     fn preload(&mut self) {
@@ -849,11 +976,11 @@ impl Worker {
         let Some(p) = &self.producer else {
             return false;
         };
-        let Some(a) = &self.active else {
-            return false;
-        };
         let ch = self.spec.channels.max(1);
-        (a.pending_pos < a.pending.len() || !a.done) && p.slots() >= 1024 * ch
+        let work = self.pipe.has_pending()
+            || self.active.as_ref().is_some_and(|a| !a.done)
+            || (self.active.is_none() && self.end_of_queue && self.pipe.conv.is_some());
+        work && p.slots() >= 1024 * ch
     }
 
     fn fill(&mut self) {
@@ -864,50 +991,58 @@ impl Worker {
             let Some(producer) = self.producer.as_mut() else {
                 return;
             };
-            let Some(a) = self.active.as_mut() else {
-                return;
-            };
-            if a.pending_pos < a.pending.len() {
+            let pipe = &mut self.pipe;
+            if pipe.has_pending() {
                 let free = producer.slots() / ch * ch;
-                let n = free.min(a.pending.len() - a.pending_pos);
+                let n = free.min(pipe.pending.len() - pipe.pending_pos);
                 if n == 0 {
                     return;
                 }
                 if let Ok(chunk) = producer.write_chunk_uninit(n) {
                     chunk.fill_from_iter(
-                        a.pending[a.pending_pos..a.pending_pos + n].iter().copied(),
+                        pipe.pending[pipe.pending_pos..pipe.pending_pos + n]
+                            .iter()
+                            .copied(),
                     );
                 }
-                a.pending_pos += n;
+                pipe.pending_pos += n;
                 self.frames_written += (n / ch) as u64;
                 continue;
             }
-            a.pending.clear();
-            a.pending_pos = 0;
+            let Some(a) = self.active.as_mut() else {
+                // Nothing follows: let the converter flush its tail.
+                if self.end_of_queue && pipe.conv.is_some() {
+                    pipe.finish_conv(ch);
+                    continue;
+                }
+                return;
+            };
             if a.done {
                 self.track_written();
                 continue;
             }
             match a.dec.next_chunk() {
                 Ok(Some(chunk)) => {
-                    let key = (chunk.rate, chunk.channels);
-                    if a.conv_key != key {
-                        a.conv_key = key;
-                        a.conv = RateConverter::new(chunk.rate, rate, ch);
+                    if pipe.conv.as_ref().map(|(_, r)| *r) != Some(chunk.rate) {
+                        // Rate change: flush the old converter first. Its output still
+                        // belongs before this chunk, and `boundary()` already counted it.
+                        if pipe.conv.is_some() || chunk.rate != rate {
+                            pipe.finish_conv(ch);
+                            pipe.conv_origin = pipe.produced;
+                            pipe.conv =
+                                RateConverter::new(chunk.rate, rate, ch).map(|c| (c, chunk.rate));
+                        }
                     }
-                    a.scratch.clear();
-                    map_channels(chunk.samples, chunk.channels, ch, &mut a.scratch);
-                    match &mut a.conv {
-                        Some(c) => c.process(&a.scratch, &mut a.pending),
-                        None => std::mem::swap(&mut a.pending, &mut a.scratch),
+                    let mut scratch = std::mem::take(&mut pipe.scratch);
+                    scratch.clear();
+                    map_channels(chunk.samples, chunk.channels, ch, &mut scratch);
+                    if a.gain != 1.0 {
+                        scratch.iter_mut().for_each(|x| *x *= a.gain);
                     }
+                    pipe.feed(ch, &scratch);
+                    pipe.scratch = scratch;
                 }
-                Ok(None) => {
-                    if let Some(c) = &mut a.conv {
-                        c.finish(&mut a.pending);
-                    }
-                    a.done = true;
-                }
+                Ok(None) => a.done = true,
                 Err(e) => {
                     let msg = e.to_string();
                     a.done = true;
@@ -973,6 +1108,7 @@ impl Worker {
                 let idx = self.queue.index_of(seg.uid);
                 self.queue.set_current(idx);
                 self.duration = seg.duration;
+                self.gain_db = seg.gain_db;
                 let entry = idx.and_then(|i| self.queue.get(i)).cloned();
                 self.emit(Event::TrackChanged(entry));
                 self.emit_position();
@@ -985,6 +1121,8 @@ impl Worker {
         if self.end_of_queue
             && self.active.is_none()
             && self.waiting_next.is_none()
+            && self.pipe.conv.is_none()
+            && !self.pipe.has_pending()
             && played >= self.frames_written
             && self.state != PlayState::Stopped
         {
@@ -1028,6 +1166,7 @@ impl Worker {
         s.volume = self.volume;
         s.repeat = self.queue.repeat();
         s.underruns = self.shared.underruns();
+        s.replay_gain_db = self.gain_db;
         if self.published_queue_version != self.queue_version {
             s.queue = Arc::new(self.queue.entries().to_vec());
             self.published_queue_version = self.queue_version;

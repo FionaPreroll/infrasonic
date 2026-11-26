@@ -34,17 +34,27 @@ pub fn map_channels(input: &[f32], in_ch: usize, out_ch: usize, out: &mut Vec<f3
 const CHUNK: usize = 1024;
 
 /// Streaming sample rate converter for interleaved audio.
+///
+/// Output frame `k` corresponds to input frame `k / ratio`: the filter delay is removed at
+/// the start and flushed at the end, so consecutive tracks fed into one converter stay
+/// sample aligned (gapless) and [`RateConverter::finish`] returns exactly
+/// `round(input_frames * ratio)` frames in total.
 pub struct RateConverter {
     inner: Async<f32>,
     channels: usize,
     pending: Vec<f32>,
     out: Vec<f32>,
+    /// Output frames still to drop (filter delay).
+    skip: usize,
+    input_frames: u64,
+    output_frames: u64,
 }
 
 impl std::fmt::Debug for RateConverter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RateConverter")
             .field("channels", &self.channels)
+            .field("input_frames", &self.input_frames)
             .finish_non_exhaustive()
     }
 }
@@ -68,45 +78,59 @@ impl RateConverter {
         )
         .ok()?;
         let out = vec![0.0; inner.output_frames_max() * channels];
+        let skip = inner.output_delay();
         Some(Self {
             inner,
             channels,
             pending: Vec::with_capacity(CHUNK * channels * 2),
             out,
+            skip,
+            input_frames: 0,
+            output_frames: 0,
         })
+    }
+
+    /// Output rate divided by input rate.
+    pub fn ratio(&self) -> f64 {
+        self.inner.resample_ratio()
+    }
+
+    /// Input frames fed so far.
+    pub fn input_frames(&self) -> u64 {
+        self.input_frames
+    }
+
+    /// Output frames that `input` input frames turn into.
+    pub fn output_for(&self, input: u64) -> u64 {
+        (input as f64 * self.ratio()).round() as u64
     }
 
     /// Feed interleaved input; converted samples are appended to `dst`.
     pub fn process(&mut self, input: &[f32], dst: &mut Vec<f32>) {
+        self.input_frames += (input.len() / self.channels) as u64;
         self.pending.extend_from_slice(input);
         self.drain(dst);
     }
 
-    /// Flush the remaining input (end of stream), padding with silence.
+    /// Flush the remaining input (end of stream), padding with silence, and reset.
     pub fn finish(&mut self, dst: &mut Vec<f32>) {
         let ch = self.channels;
-        let rest_frames = self.pending.len() / ch;
-        if rest_frames == 0 {
-            return;
+        let total = self.output_for(self.input_frames);
+        let mut guard = 0;
+        while self.output_frames < total && guard < 64 {
+            let need = self.inner.input_frames_next();
+            let have = self.pending.len() / ch;
+            self.pending.resize(need.max(have) * ch, 0.0);
+            self.drain(dst);
+            guard += 1;
         }
-        let need = self.inner.input_frames_next();
-        let expected = (rest_frames as f64 * self.inner.resample_ratio()).round() as usize;
-        self.pending.resize(need.max(rest_frames) * ch, 0.0);
-        let before = dst.len();
-        self.drain(dst);
-        // Flush the filter delay with one more block of silence.
-        let need = self.inner.input_frames_next();
-        self.pending.resize(need * ch, 0.0);
-        self.drain(dst);
-        let delay = self.inner.output_delay();
-        let produced = (dst.len() - before) / ch;
-        let start = delay.min(produced);
-        let end = (start + expected).min(produced);
-        let tail: Vec<f32> = dst[before + start * ch..before + end * ch].to_vec();
-        dst.truncate(before);
-        dst.extend_from_slice(&tail);
+        let extra = (self.output_frames.saturating_sub(total) as usize).min(dst.len() / ch);
+        dst.truncate(dst.len() - extra * ch);
         self.pending.clear();
         self.inner.reset();
+        self.skip = self.inner.output_delay();
+        self.input_frames = 0;
+        self.output_frames = 0;
     }
 
     fn drain(&mut self, dst: &mut Vec<f32>) {
@@ -126,7 +150,10 @@ impl RateConverter {
             };
             match self.inner.process_into_buffer(&input, &mut output, None) {
                 Ok((used, written)) => {
-                    dst.extend_from_slice(&self.out[..written * ch]);
+                    let drop = self.skip.min(written);
+                    self.skip -= drop;
+                    dst.extend_from_slice(&self.out[drop * ch..written * ch]);
+                    self.output_frames += (written - drop) as u64;
                     self.pending.drain(..used * ch);
                 }
                 Err(e) => {
@@ -186,7 +213,7 @@ mod tests {
         rc.finish(&mut out);
         let expected = (f64::from(to) * secs) as isize;
         assert!(
-            (out.len() as isize - expected).abs() < 64,
+            (out.len() as isize - expected).abs() <= 1,
             "got {} frames, expected about {expected}",
             out.len()
         );
@@ -196,5 +223,35 @@ mod tests {
         let seconds = mid.len() as f64 / f64::from(to);
         let freq = crossings as f64 / seconds;
         assert!((freq - 440.0).abs() < 5.0, "frequency {freq}");
+    }
+
+    #[test]
+    fn resampling_is_time_aligned() {
+        // A sine resampled must match the same sine generated at the target rate, from the
+        // very first frames on (no filter delay left in the output).
+        let (from, to) = (44_100u32, 48_000u32);
+        let f = 440.0f64;
+        let sine = |rate: u32, n: usize| -> Vec<f32> {
+            (0..n)
+                .map(|i| (i as f64 * f * std::f64::consts::TAU / f64::from(rate)).sin() as f32)
+                .collect()
+        };
+        let input = sine(from, 44_100);
+        let mut rc = RateConverter::new(from, to, 1).expect("converter");
+        let mut out = Vec::new();
+        for c in input.chunks(1000) {
+            rc.process(c, &mut out);
+        }
+        rc.finish(&mut out);
+        assert_eq!(out.len(), 48_000);
+        let want = sine(to, 48_000);
+        let err = out[2000..46_000]
+            .iter()
+            .zip(&want[2000..46_000])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        // The filter delay is a fraction of a frame off at most (0.02 here); a whole frame
+        // of misalignment would be above 0.035.
+        assert!(err < 0.025, "max error {err}");
     }
 }

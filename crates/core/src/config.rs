@@ -78,8 +78,31 @@ pub enum BrowseMode {
     Tags,
 }
 
+/// Which ReplayGain value to apply.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplayGainSetting {
+    #[default]
+    Off,
+    Track,
+    Album,
+    /// Album gain while an album plays in order, track gain otherwise.
+    Auto,
+}
+
+impl From<ReplayGainSetting> for infrasonic_engine::ReplayGainMode {
+    fn from(s: ReplayGainSetting) -> Self {
+        match s {
+            ReplayGainSetting::Off => Self::Off,
+            ReplayGainSetting::Track => Self::Track,
+            ReplayGainSetting::Album => Self::Album,
+            ReplayGainSetting::Auto => Self::Auto,
+        }
+    }
+}
+
 /// Playback settings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlaybackConfig {
     /// 0–100.
@@ -100,6 +123,30 @@ pub struct PlaybackConfig {
     /// Output device name (default device if unset).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    /// Loudness normalisation.
+    pub replay_gain: ReplayGainSetting,
+    /// Added to the ReplayGain value, in dB.
+    pub replay_gain_preamp: f32,
+    /// Gain for songs without ReplayGain values, in dB.
+    pub replay_gain_fallback: f32,
+    /// Lower the gain where it would make a song clip.
+    pub prevent_clipping: bool,
+    /// Size of the song cache in MiB; 0 turns caching off.
+    pub cache_mb: u64,
+    /// Songs after the next one that are downloaded into the cache in advance.
+    pub preload_songs: u32,
+}
+
+impl PlaybackConfig {
+    /// ReplayGain settings for the engine.
+    pub fn replay_gain_config(&self) -> infrasonic_engine::ReplayGainConfig {
+        infrasonic_engine::ReplayGainConfig {
+            mode: self.replay_gain.into(),
+            preamp_db: self.replay_gain_preamp,
+            fallback_db: self.replay_gain_fallback,
+            prevent_clipping: self.prevent_clipping,
+        }
+    }
 }
 
 impl Default for PlaybackConfig {
@@ -113,6 +160,12 @@ impl Default for PlaybackConfig {
             random_songs: 50,
             seek_step: 10,
             device: None,
+            replay_gain: ReplayGainSetting::Off,
+            replay_gain_preamp: 0.0,
+            replay_gain_fallback: 0.0,
+            prevent_clipping: true,
+            cache_mb: 1024,
+            preload_songs: 2,
         }
     }
 }
@@ -140,7 +193,7 @@ impl Default for UiConfig {
 }
 
 /// The whole configuration file.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -155,23 +208,29 @@ pub struct Config {
 pub struct Paths {
     pub config_file: PathBuf,
     pub cache_dir: PathBuf,
+    /// Pinned songs and other data that must not be wiped like a cache.
+    pub data_dir: PathBuf,
     pub log_file: PathBuf,
 }
 
 impl Paths {
     /// Platform defaults: XDG directories on Linux and macOS, `%APPDATA%` on Windows.
     pub fn platform() -> Self {
-        let (config, cache, state) = match etcetera::choose_base_strategy() {
+        let (config, cache, data, state) = match etcetera::choose_base_strategy() {
             Ok(b) => {
                 use etcetera::BaseStrategy;
                 let state = b.state_dir().unwrap_or_else(|| b.data_dir());
-                (b.config_dir(), b.cache_dir(), state)
+                (b.config_dir(), b.cache_dir(), b.data_dir(), state)
             }
-            Err(_) => (PathBuf::from("."), PathBuf::from("."), PathBuf::from(".")),
+            Err(_) => {
+                let here = PathBuf::from(".");
+                (here.clone(), here.clone(), here.clone(), here)
+            }
         };
         Self {
             config_file: config.join("infrasonic").join("config.toml"),
             cache_dir: cache.join("infrasonic"),
+            data_dir: data.join("infrasonic"),
             log_file: state.join("infrasonic").join("infrasonic.log"),
         }
     }

@@ -1848,6 +1848,7 @@ dependencies = [
  "proptest",
  "reqwest",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1866,6 +1867,7 @@ dependencies = [
  "infrasonic-subsonic",
  "parking_lot",
  "rand 0.10.4",
+ "tempfile",
  "tokio",
 ]
 

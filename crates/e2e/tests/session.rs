@@ -160,6 +160,106 @@ async fn check(server: &Server) {
     session.shutdown().await.expect("shutdown");
 }
 
+/// Streamed songs land in the cache; pinned songs play without the server.
+async fn check_cache(server: &Server) {
+    use std::sync::Arc;
+
+    use infrasonic_core::cache::{AudioCache, server_key};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key = server_key(&server.url, "admin");
+    let make_cache = || {
+        Arc::new(AudioCache::new(
+            &dir.path().join("cache"),
+            &dir.path().join("data"),
+            &key,
+            64 << 20,
+        ))
+    };
+    let playback = PlaybackConfig {
+        save_queue_on_exit: false,
+        scrobble: false,
+        ..PlaybackConfig::default()
+    };
+    let (out, _) = capturing_output(20.0);
+    let (session, mut rx) =
+        Session::connect(&server.name, &server.profile(), playback.clone(), out)
+            .await
+            .expect("connect");
+    session.set_cache(Some(make_cache()));
+    let songs = formats_album_songs(&session).await;
+    session.play_songs(&songs, 0);
+    wait_for(&mut rx, Duration::from_secs(30), |e| {
+        *e == SessionEvent::Engine(Event::QueueEnded)
+    })
+    .await;
+    let cache = session.cache().expect("cache");
+    // Downloads finish a moment after decoding.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while cache.usage().files < 4 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(cache.usage().files, 4, "{}: cached songs", server.name);
+    for s in &songs {
+        assert!(
+            cache.lookup(&s.id, "raw").is_some(),
+            "{}: {}",
+            server.name,
+            s.title
+        );
+    }
+
+    // Pin two songs.
+    session.pin(songs[..2].to_vec());
+    let mut pinned = 0;
+    wait_for(&mut rx, Duration::from_secs(20), |e| {
+        if matches!(e, SessionEvent::Pinned { .. }) {
+            pinned += 1;
+        }
+        pinned == 2
+    })
+    .await;
+    assert_eq!(cache.pinned().len(), 2);
+    session.shutdown().await.expect("shutdown");
+
+    // Offline: an unreachable server, but the pinned songs still play.
+    let mut profile = server.profile();
+    profile.url = "http://127.0.0.1:9".into();
+    let (out, capture) = capturing_output(20.0);
+    let (offline, mut rx) =
+        Session::offline(&server.name, &profile, playback, out).expect("offline session");
+    assert!(!offline.is_online());
+    // Same cache directories, as the next start would use them.
+    offline.set_cache(Some(make_cache()));
+    let pins = offline.cache().expect("cache").pinned();
+    assert_eq!(pins.len(), 2);
+    offline.play_songs(&pins, 0);
+    let events = wait_for(&mut rx, Duration::from_secs(30), |e| {
+        *e == SessionEvent::Engine(Event::QueueEnded)
+    })
+    .await;
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, SessionEvent::Engine(Event::Error(_)))),
+        "{}: {events:#?}",
+        server.name
+    );
+    let secs = capture.lock().len() as f64 / 2.0 / 44_100.0;
+    assert!(
+        (secs - 10.0).abs() < 0.5,
+        "{}: played {secs}s offline",
+        server.name
+    );
+    offline.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_caches_and_pins() {
+    for s in servers() {
+        check_cache(&s).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn session_plays_from_server() {
     for s in servers() {

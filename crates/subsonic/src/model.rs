@@ -331,6 +331,44 @@ pub struct StructuredLyrics {
     pub offset: Option<i64>,
 }
 
+/// A saved position in a song (`getBookmarks`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Bookmark {
+    /// Position in milliseconds.
+    #[serde(default)]
+    pub position: u64,
+    pub username: Option<String>,
+    pub comment: Option<String>,
+    pub created: Option<String>,
+    pub changed: Option<String>,
+    #[serde(default)]
+    pub entry: Child,
+}
+
+/// Biography and links of an artist (`getArtistInfo2`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistInfo {
+    pub biography: Option<String>,
+    pub music_brainz_id: Option<String>,
+    pub last_fm_url: Option<String>,
+    pub small_image_url: Option<String>,
+    pub medium_image_url: Option<String>,
+    pub large_image_url: Option<String>,
+    #[serde(default)]
+    pub similar_artist: Vec<Artist>,
+}
+
+/// Plain lyrics (`getLyrics`, Subsonic 1.2).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Lyrics {
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub value: String,
+}
+
 /// Kinds of album lists for `getAlbumList2`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlbumListType {
@@ -342,6 +380,11 @@ pub enum AlbumListType {
     AlphabeticalByName,
     AlphabeticalByArtist,
     Starred,
+    /// Albums released between two years (inclusive; `from > to` sorts descending).
+    ByYear {
+        from: i32,
+        to: i32,
+    },
 }
 
 impl AlbumListType {
@@ -356,6 +399,7 @@ impl AlbumListType {
             Self::AlphabeticalByName => "alphabeticalByName",
             Self::AlphabeticalByArtist => "alphabeticalByArtist",
             Self::Starred => "starred",
+            Self::ByYear { .. } => "byYear",
         }
     }
 }

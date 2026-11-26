@@ -13,3 +13,8 @@ domain (CC0-1.0).
 
 The end-to-end tests (`crates/e2e`, `crates/tui/tests/headless.rs`) mount this directory into
 Navidrome and gonic and rely on exactly these nine songs.
+
+`gapless/` holds one continuous 6 s signal (440/660 Hz) cut into three parts of exactly
+88200 frames, encoded separately as FLAC, MP3, Vorbis, Opus and AAC. All parts carry ReplayGain
+tags (track −3 dB, album −4.5 dB). `crates/engine/tests/gapless.rs` checks that the parts play
+back to back without gaps, also when resampled, and that ReplayGain is applied.

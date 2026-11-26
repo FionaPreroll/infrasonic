@@ -38,3 +38,36 @@ tone "$C/01 - Black Hole.mp3" 262 3 "Black Noise Collective" "Black Album" "Blac
 tone "$C/02 - Blackout.mp3" 294 3 "Black Noise Collective" "Black Album" "Blackout" 2 2023 Ambient -c:a libmp3lame -b:a 96k
 
 echo "generated:"; find "$OUT" -type f | sort
+
+# Gapless sets: one continuous 6 s signal cut into three 2 s parts (88200 frames, which is not
+# a multiple of any codec frame size), encoded separately per format. Played back to back
+# they must give the original signal without gaps or clicks (crates/engine/tests/gapless.rs).
+# The FLAC parts are lossless and serve as the reference. All parts carry ReplayGain tags.
+G=testdata/gapless
+rm -rf "$G"
+mkdir -p "$G"
+ffmpeg -nostdin -loglevel error -y \
+  -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=6" \
+  -f lavfi -i "sine=frequency=660:sample_rate=44100:duration=6" \
+  -filter_complex "[0:a][1:a]join=inputs=2:channel_layout=stereo,volume=0.5[a]" -map "[a]" \
+  -c:a pcm_s16le "$G/reference.wav"
+trap 'rm -f "$G/reference.wav"' EXIT
+part() {
+  local ext=$1 n=$2
+  shift 2
+  mkdir -p "$G/$ext"
+  ffmpeg -nostdin -loglevel error -y -i "$G/reference.wav" \
+    -af "atrim=start_sample=$(((n - 1) * 88200)):end_sample=$((n * 88200)),asetpts=N/SR/TB" \
+    -metadata title="Gapless $n" -metadata album="Gapless $ext" -metadata track="$n" \
+    -metadata REPLAYGAIN_TRACK_GAIN="-3.00 dB" -metadata REPLAYGAIN_TRACK_PEAK="0.5" \
+    -metadata REPLAYGAIN_ALBUM_GAIN="-4.50 dB" -metadata REPLAYGAIN_ALBUM_PEAK="0.5" \
+    "$@" "$G/$ext/part$n.$ext"
+}
+for n in 1 2 3; do
+  part flac $n -c:a flac
+  part mp3 $n -c:a libmp3lame -b:a 192k
+  part ogg $n -c:a libvorbis -q:a 5
+  part opus $n -c:a libopus -b:a 128k
+  part m4a $n -c:a aac -b:a 192k
+done
+echo "gapless:"; find "$G" -type f | sort

@@ -14,7 +14,7 @@ default = ["cpal-output"]
 cpal-output = ["dep:cpal"]
 
 [dependencies]
-symphonia = { workspace = true, features = ["mp3", "flac", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "pcm", "aiff", "mkv", "adpcm"] }
+symphonia = { workspace = true, features = ["mp3", "flac", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "pcm", "aiff", "mkv", "adpcm", "id3v2", "ape"] }
 opus-decoder.workspace = true
 rubato.workspace = true
 audioadapter-buffers = "5"

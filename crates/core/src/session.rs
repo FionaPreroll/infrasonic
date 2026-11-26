@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use infrasonic_engine::output::OutputFactory;
-use infrasonic_engine::{Command, Engine, EngineConfig, Event, Snapshot, Track};
+use infrasonic_engine::{Command, Engine, EngineConfig, Event, Snapshot, SnapshotReader, Track};
 use infrasonic_subsonic::{Child, Client, ServerInfo, StarTarget, StreamOptions};
 use tokio::sync::mpsc;
 
+use crate::cache::AudioCache;
 use crate::config::{PlaybackConfig, Profile, resolve_auth};
 use crate::http::HttpSourceProvider;
 use crate::scrobble::{ScrobbleAction, ScrobbleTracker};
@@ -21,6 +22,8 @@ pub enum SessionEvent {
     Engine(Event),
     /// A play was submitted to the server.
     Scrobbled { id: String },
+    /// A song was downloaded for offline use.
+    Pinned { id: String },
     /// A background operation failed.
     Error(String),
 }
@@ -38,6 +41,7 @@ pub struct Session {
     provider: HttpSourceProvider,
     playback: PlaybackConfig,
     profile_name: String,
+    events: mpsc::UnboundedSender<SessionEvent>,
 }
 
 fn now_ms() -> u64 {
@@ -86,6 +90,27 @@ impl Session {
         ))
     }
 
+    /// A session that does not talk to the server on start, for playing pinned songs while
+    /// the server is unreachable. Requests made later still go to the server.
+    pub fn offline(
+        profile_name: &str,
+        profile: &Profile,
+        playback: PlaybackConfig,
+        output: Box<dyn OutputFactory>,
+    ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>), CoreError> {
+        let auth = resolve_auth(profile_name, profile)?;
+        let client = Client::builder(&profile.url, auth)
+            .client_name("infrasonic")
+            .build()?;
+        Ok(Self::with_client(
+            client,
+            ServerInfo::default(),
+            profile_name,
+            playback,
+            output,
+        ))
+    }
+
     /// Build a session around an already connected client.
     pub fn with_client(
         client: Client,
@@ -100,19 +125,23 @@ impl Session {
         let engine = Engine::new(
             EngineConfig {
                 volume: playback.volume,
+                replay_gain: playback.replay_gain_config(),
                 ..EngineConfig::default()
             },
             Arc::new(provider.clone()),
             output,
         );
         let (tx, rx) = mpsc::unbounded_channel();
-        spawn_event_pump(
-            engine.events().clone(),
-            tx,
-            client.clone(),
+        spawn_event_pump(Pump {
+            events: engine.events().clone(),
+            tx: tx.clone(),
+            client: client.clone(),
             handle,
-            playback.scrobble,
-        );
+            scrobble: playback.scrobble,
+            provider: provider.clone(),
+            snapshot: engine.snapshot_reader(),
+            preload: playback.preload_songs as usize,
+        });
         (
             Self {
                 client,
@@ -121,6 +150,7 @@ impl Session {
                 provider,
                 playback,
                 profile_name: profile_name.to_string(),
+                events: tx,
             },
             rx,
         )
@@ -150,6 +180,64 @@ impl Session {
     /// Current engine state.
     pub fn snapshot(&self) -> Snapshot {
         self.engine.snapshot()
+    }
+
+    /// Use a song cache and pinned songs (see [`AudioCache`]).
+    pub fn set_cache(&self, cache: Option<Arc<AudioCache>>) {
+        self.provider.set_cache(cache);
+    }
+
+    pub fn cache(&self) -> Option<Arc<AudioCache>> {
+        self.provider.cache()
+    }
+
+    /// Whether the server answered on connect (false for [`Session::offline`]).
+    pub fn is_online(&self) -> bool {
+        !self.info.version.is_empty()
+    }
+
+    /// Download songs for offline use, one after the other. Each finished song is reported
+    /// as [`SessionEvent::Pinned`].
+    pub fn pin(&self, songs: Vec<Child>) {
+        let provider = self.provider.clone();
+        let tx = self.events.clone();
+        tokio::runtime::Handle::current().spawn(async move {
+            for song in songs.into_iter().filter(|s| !s.is_dir) {
+                let Some(cache) = provider.cache() else {
+                    return;
+                };
+                if cache.is_pinned(&song.id) {
+                    continue;
+                }
+                match provider.pin(&song.id).await {
+                    Ok(()) => {
+                        cache.note_pin(&song);
+                        let _ = tx.send(SessionEvent::Pinned { id: song.id });
+                    }
+                    Err(e) => {
+                        let _ = tx.send(SessionEvent::Error(format!(
+                            "could not download {}: {e}",
+                            song.title
+                        )));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Remove pinned songs.
+    pub fn unpin(&self, ids: &[String]) {
+        if let Some(c) = self.cache() {
+            for id in ids {
+                c.unpin(id);
+            }
+        }
+    }
+
+    /// Change ReplayGain settings.
+    pub fn set_replay_gain(&mut self, setting: crate::config::ReplayGainSetting) {
+        self.playback.replay_gain = setting;
+        self.send(Command::SetReplayGain(self.playback.replay_gain_config()));
     }
 
     /// Change streaming quality for tracks opened from now on.
@@ -336,18 +424,56 @@ impl Session {
     }
 }
 
-fn spawn_event_pump(
+struct Pump {
     events: crossbeam_channel::Receiver<Event>,
     tx: mpsc::UnboundedSender<SessionEvent>,
     client: Client,
     handle: tokio::runtime::Handle,
     scrobble: bool,
-) {
+    provider: HttpSourceProvider,
+    snapshot: SnapshotReader,
+    preload: usize,
+}
+
+/// Download the songs after the next one into the cache (the engine opens the next one
+/// itself, and that download is cached too).
+fn prefetch(p: &Pump, uid: u64) {
+    if p.preload == 0 || p.provider.cache().is_none_or(|c| !c.enabled()) {
+        return;
+    }
+    let snap = p.snapshot.get();
+    let Some(i) = snap.queue.iter().position(|e| e.uid == uid) else {
+        return;
+    };
+    for e in snap.queue.iter().skip(i + 2).take(p.preload) {
+        p.provider.prefetch(&e.track.id);
+    }
+}
+
+fn spawn_event_pump(p: Pump) {
     let _ = std::thread::Builder::new()
         .name("infrasonic-events".into())
         .spawn(move || {
+            let Pump {
+                events,
+                tx,
+                client,
+                handle,
+                scrobble,
+                ..
+            } = &p;
+            let (events, tx, client, handle, scrobble) = (
+                events.clone(),
+                tx.clone(),
+                client.clone(),
+                handle.clone(),
+                *scrobble,
+            );
             let mut tracker = ScrobbleTracker::new();
             while let Ok(ev) = events.recv() {
+                if let Event::TrackChanged(Some(e)) = &ev {
+                    prefetch(&p, e.uid);
+                }
                 let action = match &ev {
                     Event::TrackChanged(entry) => tracker.track_changed(
                         entry.as_ref().map(|e| e.track.id.as_str()),

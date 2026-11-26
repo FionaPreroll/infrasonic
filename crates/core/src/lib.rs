@@ -2,6 +2,7 @@
 //! Application logic shared by the infrasonic frontends: configuration and server profiles,
 //! streaming from Subsonic into the engine, scrobbling and play queue synchronisation.
 
+pub mod cache;
 pub mod config;
 pub mod http;
 pub mod scrobble;
@@ -47,5 +48,14 @@ pub fn track_from_child(c: &Child) -> Track {
         album_id: c.album_id.clone(),
         artist_id: c.artist_id.clone(),
         starred: c.is_starred(),
+        replay_gain: c.replay_gain.as_ref().and_then(|r| {
+            let rg = infrasonic_engine::ReplayGain {
+                track_gain: r.track_gain.or(r.fallback_gain),
+                track_peak: r.track_peak.filter(|p| *p > 0.0),
+                album_gain: r.album_gain.or(r.fallback_gain),
+                album_peak: r.album_peak.filter(|p| *p > 0.0),
+            };
+            (!rg.is_empty()).then_some(rg)
+        }),
     }
 }

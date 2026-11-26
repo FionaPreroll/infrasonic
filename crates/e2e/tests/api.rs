@@ -123,6 +123,38 @@ async fn check_server(s: &Server) {
         newest.len()
     );
 
+    // Album lists by year and genre.
+    let years = c
+        .get_album_list2(
+            AlbumListType::ByYear {
+                from: 2024,
+                to: 2025,
+            },
+            10,
+            0,
+        )
+        .await
+        .expect("by year");
+    let mut names: Vec<&str> = years.iter().map(|a| a.name.as_str()).collect();
+    names.sort();
+    names.dedup();
+    assert_eq!(names, ["Formats Live", "Sine Studies"], "{}", s.name);
+    let genres = c.get_genres().await.expect("genres");
+    assert!(
+        genres.iter().any(|g| g.value == "Jazz"),
+        "{}: {genres:?}",
+        s.name
+    );
+    let jazz = c
+        .get_albums_by_genre("Jazz", 10, 0)
+        .await
+        .expect("by genre");
+    assert!(
+        !jazz.is_empty() && jazz.iter().all(|a| a.name == "Formats Live"),
+        "{}: {jazz:?}",
+        s.name
+    );
+
     // Stars.
     let song = &songs[0];
     c.star(&StarTarget::id(&song.id)).await.expect("star");
@@ -195,6 +227,50 @@ async fn check_server(s: &Server) {
     );
     assert_eq!(pq.current.as_deref(), Some(ids[1].as_str()));
     assert_eq!(pq.position, Some(1500), "{}", s.name);
+
+    // Ratings.
+    c.set_rating(&song.id, 4).await.expect("rate");
+    assert_eq!(
+        c.get_song(&song.id).await.expect("song").user_rating,
+        Some(4),
+        "{}",
+        s.name
+    );
+    c.set_rating(&song.id, 0).await.expect("unrate");
+    assert!(
+        c.get_song(&song.id)
+            .await
+            .expect("song")
+            .user_rating
+            .is_none_or(|r| r == 0),
+        "{}",
+        s.name
+    );
+
+    // Bookmarks.
+    c.create_bookmark(&song.id, 12_345, Some("e2e"))
+        .await
+        .expect("bookmark");
+    let marks = c.get_bookmarks().await.expect("bookmarks");
+    let m = marks
+        .iter()
+        .find(|b| b.entry.id == song.id)
+        .unwrap_or_else(|| panic!("{}: bookmark missing: {marks:?}", s.name));
+    assert_eq!(m.position, 12_345, "{}", s.name);
+    assert_eq!(m.entry.title, song.title, "{}", s.name);
+    c.delete_bookmark(&song.id).await.expect("delete bookmark");
+    assert!(
+        !c.get_bookmarks()
+            .await
+            .expect("bookmarks")
+            .iter()
+            .any(|b| b.entry.id == song.id),
+        "{}",
+        s.name
+    );
+
+    // Artist info answers (external services are off, so it is mostly empty).
+    c.get_artist_info2(&quartet.id, 5).await.ok();
 
     // Scrobbling and scans.
     c.scrobble(&song.id, false, None)

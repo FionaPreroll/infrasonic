@@ -16,12 +16,15 @@
 
 pub mod convert;
 pub mod decode;
+pub mod gain;
+mod mp4edit;
 pub mod output;
 mod player;
 pub mod queue;
 pub mod source;
 
-pub use player::{Command, Engine, EngineConfig, Event, PlayState, Snapshot};
+pub use gain::{ReplayGain, ReplayGainConfig, ReplayGainMode};
+pub use player::{Command, Engine, EngineConfig, Event, PlayState, Snapshot, SnapshotReader};
 pub use queue::{Queue, QueueEntry, RepeatMode};
 pub use symphonia::core::io::MediaSource;
 
@@ -59,6 +62,8 @@ pub struct Track {
     pub album_id: Option<String>,
     pub artist_id: Option<String>,
     pub starred: bool,
+    /// ReplayGain values from the server. Tags in the file fill in what is missing.
+    pub replay_gain: Option<ReplayGain>,
 }
 
 impl Track {

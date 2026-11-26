@@ -687,14 +687,82 @@ impl Client {
         size: u32,
         offset: u32,
     ) -> Result<Vec<Album>> {
+        let mut p: Params = vec![
+            ("type", list.as_str().into()),
+            ("size", size.to_string()),
+            ("offset", offset.to_string()),
+        ];
+        if let AlbumListType::ByYear { from, to } = list {
+            p.push(("fromYear", from.to_string()));
+            p.push(("toYear", to.to_string()));
+        }
+        self.call("getAlbumList2", &p, &["albumList2", "album"], false)
+            .await
+    }
+
+    /// `getAlbumList2` with `type=byGenre`.
+    pub async fn get_albums_by_genre(
+        &self,
+        genre: &str,
+        size: u32,
+        offset: u32,
+    ) -> Result<Vec<Album>> {
         self.call(
             "getAlbumList2",
             &[
-                ("type", list.as_str().into()),
+                ("type", "byGenre".into()),
+                ("genre", genre.into()),
                 ("size", size.to_string()),
                 ("offset", offset.to_string()),
             ],
             &["albumList2", "album"],
+            false,
+        )
+        .await
+    }
+
+    /// `getBookmarks`.
+    pub async fn get_bookmarks(&self) -> Result<Vec<Bookmark>> {
+        self.call("getBookmarks", &[], &["bookmarks", "bookmark"], false)
+            .await
+    }
+
+    /// `createBookmark`: save `position_ms` in song `id` (replaces an existing bookmark).
+    pub async fn create_bookmark(
+        &self,
+        id: &str,
+        position_ms: u64,
+        comment: Option<&str>,
+    ) -> Result<()> {
+        let mut p: Params = vec![("id", id.into()), ("position", position_ms.to_string())];
+        if let Some(c) = comment {
+            p.push(("comment", c.into()));
+        }
+        self.call_unit("createBookmark", &p).await
+    }
+
+    /// `deleteBookmark`.
+    pub async fn delete_bookmark(&self, id: &str) -> Result<()> {
+        self.call_unit("deleteBookmark", &[("id", id.into())]).await
+    }
+
+    /// `getArtistInfo2`.
+    pub async fn get_artist_info2(&self, id: &str, count: u32) -> Result<ArtistInfo> {
+        self.call(
+            "getArtistInfo2",
+            &[("id", id.into()), ("count", count.to_string())],
+            &["artistInfo2"],
+            false,
+        )
+        .await
+    }
+
+    /// `getLyrics` (plain text, looked up by artist and title).
+    pub async fn get_lyrics(&self, artist: &str, title: &str) -> Result<Lyrics> {
+        self.call(
+            "getLyrics",
+            &[("artist", artist.into()), ("title", title.into())],
+            &["lyrics"],
             false,
         )
         .await
