@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>infrasonic web spike</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 2rem; max-width: 48rem; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { padding: .3rem .6rem; border-bottom: 1px solid #ddd; text-align: left; }
+  .ok { color: #187a3a; } .fail { color: #b3261e; }
+</style>
+</head>
+<body>
+<h1>infrasonic engine in WebAssembly</h1>
+<p>Decodes the synthetic test files with Symphonia and opus-decoder, resamples them with rubato
+and plays them through WebAudio. Nothing is sent anywhere.</p>
+<button id="play" disabled>Play all</button>
+<table><thead><tr><th>File</th><th>Source</th><th>Length</th><th>Decode only</th><th>Decode + resample</th><th>Speed</th><th></th></tr></thead>
+<tbody id="rows"></tbody></table>
+<script type="module">
+import init, { decode } from "./pkg/infrasonic_web_spike.js";
+
+const FILES = [
+  ["mp3", "music/The Codec Quartet/Formats Live (2025)/01 - MP3 Song.mp3", 5],
+  ["ogg", "music/The Codec Quartet/Formats Live (2025)/02 - Vorbis Song.ogg", 5],
+  ["opus", "music/The Codec Quartet/Formats Live (2025)/03 - Opus Song.opus", 5],
+  ["m4a", "music/The Codec Quartet/Formats Live (2025)/04 - AAC Song.m4a", 5],
+  ["flac", "music/Infrasonic Test Ensemble/Sine Studies (2024)/01 - Low A.flac", 4],
+];
+
+await init();
+const ctx = new AudioContext();
+const rate = ctx.sampleRate;
+const results = [];
+const buffers = [];
+for (const [hint, path, expected] of FILES) {
+  const row = document.createElement("tr");
+  document.getElementById("rows").append(row);
+  try {
+    const bytes = new Uint8Array(await (await fetch(encodeURI(path))).arrayBuffer());
+    const t0 = performance.now();
+    const d = decode(bytes, hint, rate);
+    const ms = performance.now() - t0;
+    const t1 = performance.now();
+    decode(bytes, hint, d.source_rate).free();
+    const decodeMs = performance.now() - t1;
+    const buf = ctx.createBuffer(2, d.channel(0).length, rate);
+    buf.copyToChannel(d.channel(0), 0);
+    buf.copyToChannel(d.channel(1), 1);
+    buffers.push(buf);
+    const ok = Math.abs(d.seconds - expected) < 0.2 && d.peak > 0.03;
+    results.push({ hint, seconds: d.seconds, peak: d.peak, ms, decodeMs, ok, sourceRate: d.source_rate });
+    row.innerHTML = `<td>${hint}</td><td>${d.source_rate} Hz, ${d.source_channels} ch</td>` +
+      `<td>${d.seconds.toFixed(2)} s</td><td>${decodeMs.toFixed(0)} ms</td><td>${ms.toFixed(0)} ms</td>` +
+      `<td>${(d.seconds * 1000 / ms).toFixed(0)}×</td><td class="${ok ? "ok" : "fail"}">${ok ? "ok" : "wrong"}</td>`;
+  } catch (e) {
+    results.push({ hint, error: String(e), ok: false });
+    row.innerHTML = `<td>${hint}</td><td colspan="6" class="fail">${e}</td>`;
+  }
+}
+window.spikeResults = { rate, results };
+const play = document.getElementById("play");
+play.disabled = false;
+play.onclick = async () => {
+  await ctx.resume();
+  let t = ctx.currentTime + 0.1;
+  for (const b of buffers) {
+    const src = ctx.createBufferSource();
+    src.buffer = b;
+    src.connect(ctx.destination);
+    src.start(t);
+    t += b.duration;
+  }
+};
+</script>
+</body>
+</html>

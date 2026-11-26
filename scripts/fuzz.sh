@@ -40,10 +40,5 @@ seed_decode
 seed_responses
 for t in "${TARGETS[@]}"; do
   echo "== $t ($SECS s)"
-  opts=()
-  # opus-decoder 0.1.1 has an intentional-looking u8 shift overflow (wraps in release builds,
-  # see Cargo.toml). Overflow checks would report it on every other Opus input, so the decoder
-  # target is fuzzed with release semantics, like the shipped binary.
-  if [ "$t" = decode ]; then opts=(-O); fi
-  cargo +nightly fuzz run "${opts[@]}" "$t" -- -max_total_time="$SECS" -rss_limit_mb=2048 -timeout=10
+  cargo +nightly fuzz run "$t" -- -max_total_time="$SECS" -rss_limit_mb=2048 -timeout=10
 done

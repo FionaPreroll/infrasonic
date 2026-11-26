@@ -22,9 +22,8 @@ members = ["."]
 [profile.release]
 debug = 1
 
-# See the comment in the main Cargo.toml.
-[profile.release.package.opus-decoder]
-overflow-checks = false
+[patch.crates-io]
+opus-decoder = { path = "../vendor/opus-decoder" }
 
 [[bin]]
 name = "subsonic_response"

@@ -61,7 +61,9 @@ fn random_command(rng: &mut Rng, songs: &[Child], queue_len: usize) -> Option<Co
     let track = |c: &Child| infrasonic_core::track_from_child(c);
     let pick = |rng: &mut Rng, max: usize| -> Vec<_> {
         let n = 1 + rng.below(max);
-        (0..n).map(|_| track(&songs[rng.below(songs.len())])).collect()
+        (0..n)
+            .map(|_| track(&songs[rng.below(songs.len())]))
+            .collect()
     };
     Some(match rng.below(100) {
         0..=14 => Command::Next,
@@ -150,8 +152,16 @@ async fn soak(server: &Server, secs: u64, seed: u64) {
         let snap = session.snapshot();
         stats.max_snapshot_ms = stats.max_snapshot_ms.max(t.elapsed().as_millis());
         if let Some(i) = snap.current_index {
-            assert!(i < snap.queue.len(), "{}: index {i} of {}", server.name, snap.queue.len());
-            assert_eq!(snap.current.as_ref().map(|c| c.uid), Some(snap.queue[i].uid));
+            assert!(
+                i < snap.queue.len(),
+                "{}: index {i} of {}",
+                server.name,
+                snap.queue.len()
+            );
+            assert_eq!(
+                snap.current.as_ref().map(|c| c.uid),
+                Some(snap.queue[i].uid)
+            );
         }
         // Playback must move forward whenever it claims to play.
         let uid = snap.current.as_ref().map(|c| c.uid).unwrap_or(0);
@@ -189,13 +199,33 @@ async fn soak(server: &Server, secs: u64, seed: u64) {
         "{}: {secs}s seed {seed}: {stats:?}, baseline {baseline:?}, end {end:?}, peak threads {peak_threads}",
         server.name
     );
-    assert!(errors.is_empty(), "{}: errors (seed {seed}): {errors:#?}", server.name);
-    assert!(stats.tracks_started > 10, "{}: too little playback: {stats:?}", server.name);
-    assert!(stats.max_snapshot_ms < 500, "{}: engine slow to answer: {stats:?}", server.name);
+    assert!(
+        errors.is_empty(),
+        "{}: errors (seed {seed}): {errors:#?}",
+        server.name
+    );
+    assert!(
+        stats.tracks_started > 10,
+        "{}: too little playback: {stats:?}",
+        server.name
+    );
+    assert!(
+        stats.max_snapshot_ms < 500,
+        "{}: engine slow to answer: {stats:?}",
+        server.name
+    );
     if let (Some((rss0, threads0)), Some((rss1, threads1))) = (baseline, end) {
         // Loader threads come and go; a steady growth means a leak.
-        assert!(threads1 <= threads0 + 8, "{}: threads {threads0} -> {threads1}", server.name);
-        assert!(rss1 <= rss0 + 64 * 1024, "{}: RSS {rss0} KiB -> {rss1} KiB", server.name);
+        assert!(
+            threads1 <= threads0 + 8,
+            "{}: threads {threads0} -> {threads1}",
+            server.name
+        );
+        assert!(
+            rss1 <= rss0 + 64 * 1024,
+            "{}: RSS {rss0} KiB -> {rss1} KiB",
+            server.name
+        );
     }
     session.shutdown().await.expect("shutdown");
 }

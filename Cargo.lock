@@ -1910,6 +1910,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "infrasonic-web-spike"
+version = "0.1.0"
+dependencies = [
+ "infrasonic-engine",
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "inout"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2599,8 +2608,6 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 [[package]]
 name = "opus-decoder"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15ae32c275dabb0cd2c863460bf349e9abc3568ba2abf0f9eb7b7d2edeeed07e"
 dependencies = [
  "thiserror 2.0.21",
 ]

@@ -1021,7 +1021,9 @@ impl Worker {
         s.state = self.state;
         s.current_index = self.queue.current_index();
         s.current = self.queue.current().cloned();
-        s.position = self.duration.map_or(self.position, |d| self.position.min(d));
+        s.position = self
+            .duration
+            .map_or(self.position, |d| self.position.min(d));
         s.duration = self.duration;
         s.volume = self.volume;
         s.repeat = self.queue.repeat();
