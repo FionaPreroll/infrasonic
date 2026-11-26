@@ -252,8 +252,13 @@ fn transport_commands() {
     wait_for(&e, Duration::from_secs(5), |ev| {
         *ev == Event::StateChanged(PlayState::Playing)
     });
-    std::thread::sleep(Duration::from_millis(300));
-    let s = e.snapshot();
+    // Slow CI runners need a moment before the first audio is played; poll instead of sleeping.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut s = e.snapshot();
+    while s.position <= 0.1 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+        s = e.snapshot();
+    }
     assert_eq!(s.current_index, Some(1));
     assert!(
         s.position > 0.1 && s.position < 1.5,
@@ -352,8 +357,12 @@ fn repeat_one_and_queue_edits() {
     e.send(Command::SetRepeat(RepeatMode::Off));
     e.send(Command::Move { from: 2, to: 0 });
     e.send(Command::Remove(1));
-    std::thread::sleep(Duration::from_millis(50));
-    let s = e.snapshot();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let mut s = e.snapshot();
+    while s.queue.len() != 2 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+        s = e.snapshot();
+    }
     assert_eq!(s.queue.len(), 2);
     assert_eq!(s.current_index, Some(0));
     assert!(s.current.is_some_and(|c| c.track.title.contains("High A")));
