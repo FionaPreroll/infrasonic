@@ -24,6 +24,7 @@ parking_lot.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 rand.workspace = true
+web-time = "1"
 cpal = { workspace = true, optional = true }
 
 [dev-dependencies]

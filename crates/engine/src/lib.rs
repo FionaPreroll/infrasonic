@@ -24,7 +24,7 @@ pub mod queue;
 pub mod source;
 
 pub use gain::{ReplayGain, ReplayGainConfig, ReplayGainMode};
-pub use player::{Command, Engine, EngineConfig, Event, PlayState, Snapshot, SnapshotReader};
+pub use player::{Command, Engine, EngineConfig, Event, PlayState, Pump, Snapshot, SnapshotReader};
 pub use queue::{Queue, QueueEntry, RepeatMode};
 pub use symphonia::core::io::MediaSource;
 
@@ -90,6 +90,13 @@ impl Track {
 /// (see [`source::stream_pair`]). It is called from engine worker threads.
 pub trait SourceProvider: Send + Sync {
     fn open(&self, track: &Track) -> Result<Box<dyn MediaSource>, Error>;
+
+    /// Whether `track` can be opened and read without blocking. Only asked in pump mode
+    /// ([`Engine::new_pump`]), where a blocking read would stall everything; the engine waits
+    /// until this returns true. Native threads may block, so the default is true.
+    fn is_ready(&self, _track: &Track) -> bool {
+        true
+    }
 }
 
 impl<F> SourceProvider for F

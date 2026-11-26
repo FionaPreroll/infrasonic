@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The engine thread: queue handling, decoding, gapless transitions and position tracking.
+//!
+//! Natively the engine runs on its own thread and opens tracks on short-lived loader threads.
+//! In the browser there are no threads: [`Engine::new_pump`] returns a [`Pump`] that the host
+//! drives from its event loop, and tracks are opened once their sources are complete.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use crossbeam_channel::{Receiver, Sender, select};
 use parking_lot::RwLock;
@@ -198,6 +204,103 @@ impl SnapshotReader {
     }
 }
 
+impl Engine {
+    /// An engine without threads, for single-threaded hosts (WebAssembly). Nothing happens
+    /// until the host calls [`Pump::turn`]; the provider's [`SourceProvider::is_ready`] decides
+    /// when a track can be opened, since reading must never block.
+    pub fn new_pump(
+        config: EngineConfig,
+        provider: Arc<dyn SourceProvider>,
+        output: Box<dyn OutputFactory>,
+    ) -> (Self, Pump) {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (ev_tx, ev_rx) = crossbeam_channel::unbounded();
+        let snapshot = Arc::new(RwLock::new(Snapshot {
+            volume: config.volume.min(100),
+            ..Snapshot::default()
+        }));
+        let mut worker = Worker::new(config, provider, output, rx, ev_tx, snapshot.clone());
+        worker.pump = true;
+        (
+            Self {
+                tx,
+                events: ev_rx,
+                snapshot,
+                thread: None,
+            },
+            Pump {
+                worker,
+                stopped: false,
+            },
+        )
+    }
+}
+
+/// Drives an engine created with [`Engine::new_pump`].
+pub struct Pump {
+    worker: Worker,
+    stopped: bool,
+}
+
+impl std::fmt::Debug for Pump {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pump")
+            .field("state", &self.worker.state)
+            .field("deferred", &self.worker.deferred.len())
+            .finish()
+    }
+}
+
+impl Pump {
+    /// Handle queued commands, open tracks whose sources are ready and decode as much as the
+    /// output buffer takes. Returns false once the engine was shut down.
+    pub fn turn(&mut self) -> bool {
+        if self.stopped {
+            return false;
+        }
+        let w = &mut self.worker;
+        while let Ok(c) = w.rx.try_recv() {
+            if c == Command::Shutdown {
+                w.stop_output();
+                self.stopped = true;
+                return false;
+            }
+            w.handle(c);
+        }
+        w.run_deferred();
+        w.fill();
+        w.update_position();
+        w.publish();
+        true
+    }
+
+    /// Whether another turn right away would do work (decode or open a track).
+    pub fn busy(&self) -> bool {
+        self.worker.needs_fill() || !self.worker.deferred.is_empty()
+    }
+
+    /// Tracks waiting for their sources.
+    pub fn waiting(&self) -> usize {
+        self.worker.deferred.len()
+    }
+}
+
+/// Work that runs on a loader thread natively and in a later turn in pump mode.
+enum Deferred {
+    Open {
+        generation: u64,
+        entry: QueueEntry,
+        purpose: Purpose,
+        start: f64,
+    },
+    Seek {
+        generation: u64,
+        uid: u64,
+        dec: Box<TrackDecoder>,
+        to: f64,
+    },
+}
+
 impl Drop for Engine {
     fn drop(&mut self) {
         let _ = self.tx.send(Command::Shutdown);
@@ -336,6 +439,9 @@ struct Worker {
     volume: u8,
     last_position_event: Instant,
     failures_in_row: usize,
+    /// Single-threaded mode: loader work goes to `deferred` instead of threads.
+    pump: bool,
+    deferred: VecDeque<Deferred>,
 }
 
 impl Worker {
@@ -388,6 +494,8 @@ impl Worker {
             volume,
             last_position_event: Instant::now(),
             failures_in_row: 0,
+            pump: false,
+            deferred: VecDeque::new(),
         }
     }
 
@@ -629,8 +737,11 @@ impl Worker {
     fn flush(&mut self) {
         if self.producer.is_some() {
             self.shared.request_flush();
+            if let Some(o) = self.output.as_mut() {
+                o.service();
+            }
             let deadline = Instant::now() + Duration::from_millis(300);
-            while self.shared.flush_pending() && Instant::now() < deadline {
+            while !self.pump && self.shared.flush_pending() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(1));
             }
         }
@@ -671,7 +782,16 @@ impl Worker {
         self.spawn_open(entry, Purpose::Play, position.max(0.0));
     }
 
-    fn spawn_open(&self, entry: QueueEntry, purpose: Purpose, start: f64) {
+    fn spawn_open(&mut self, entry: QueueEntry, purpose: Purpose, start: f64) {
+        if self.pump {
+            self.deferred.push_back(Deferred::Open {
+                generation: self.generation,
+                entry,
+                purpose,
+                start,
+            });
+            return;
+        }
         let provider = self.provider.clone();
         let tx = self.loaded_tx.clone();
         let generation = self.generation;
@@ -698,7 +818,16 @@ impl Worker {
         }
     }
 
-    fn spawn_seek(&self, uid: u64, mut dec: TrackDecoder, to: f64) {
+    fn spawn_seek(&mut self, uid: u64, mut dec: TrackDecoder, to: f64) {
+        if self.pump {
+            self.deferred.push_back(Deferred::Seek {
+                generation: self.generation,
+                uid,
+                dec: Box::new(dec),
+                to,
+            });
+            return;
+        }
         let tx = self.loaded_tx.clone();
         let generation = self.generation;
         let _ = std::thread::Builder::new()
@@ -713,6 +842,62 @@ impl Worker {
                     result,
                 });
             });
+    }
+
+    /// Pump mode: run the loader work whose sources can be read without blocking.
+    fn run_deferred(&mut self) {
+        let tasks = std::mem::take(&mut self.deferred);
+        for t in tasks {
+            match t {
+                Deferred::Open { generation, .. } | Deferred::Seek { generation, .. }
+                    if generation != self.generation => {}
+                Deferred::Open {
+                    generation,
+                    entry,
+                    purpose,
+                    start,
+                } => {
+                    if !self.provider.is_ready(&entry.track) {
+                        self.deferred.push_back(Deferred::Open {
+                            generation,
+                            entry,
+                            purpose,
+                            start,
+                        });
+                        continue;
+                    }
+                    let result = self.provider.open(&entry.track).and_then(|src| {
+                        let mut dec = TrackDecoder::open(src, entry.track.format_hint())?;
+                        if start > 0.0 {
+                            dec.seek(start)?;
+                        }
+                        Ok(dec)
+                    });
+                    self.handle_loaded(Loaded {
+                        generation,
+                        uid: entry.uid,
+                        purpose,
+                        start,
+                        result,
+                    });
+                }
+                Deferred::Seek {
+                    generation,
+                    uid,
+                    mut dec,
+                    to,
+                } => {
+                    let result = dec.seek(to).map(|_| *dec);
+                    self.handle_loaded(Loaded {
+                        generation,
+                        uid,
+                        purpose: Purpose::Play,
+                        start: to,
+                        result,
+                    });
+                }
+            }
+        }
     }
 
     fn handle_loaded(&mut self, l: Loaded) {

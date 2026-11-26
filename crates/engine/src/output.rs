@@ -25,6 +25,8 @@ pub struct OutputSpec {
 #[derive(Debug)]
 pub struct OutputShared {
     played_frames: AtomicU64,
+    /// Frames taken from the ring but not heard yet (pull backends with their own queue).
+    latency_frames: AtomicU64,
     paused: AtomicBool,
     flush: AtomicBool,
     gain_bits: AtomicU32,
@@ -37,6 +39,7 @@ impl Default for OutputShared {
     fn default() -> Self {
         Self {
             played_frames: AtomicU64::new(0),
+            latency_frames: AtomicU64::new(0),
             paused: AtomicBool::new(false),
             flush: AtomicBool::new(false),
             gain_bits: AtomicU32::new(1.0f32.to_bits()),
@@ -50,7 +53,9 @@ impl Default for OutputShared {
 impl OutputShared {
     /// Frames played since the last flush.
     pub fn played_frames(&self) -> u64 {
-        self.played_frames.load(Ordering::Acquire)
+        self.played_frames
+            .load(Ordering::Acquire)
+            .saturating_sub(self.latency_frames.load(Ordering::Acquire))
     }
     pub fn set_paused(&self, p: bool) {
         self.paused.store(p, Ordering::Release);
@@ -134,6 +139,10 @@ pub fn render(
 /// A running output stream. Dropping it stops playback.
 pub trait AudioOutput: Send {
     fn spec(&self) -> OutputSpec;
+
+    /// Called by the engine after it requested a flush. Backends whose audio is not pulled by
+    /// a callback of their own carry the flush out here.
+    fn service(&mut self) {}
 }
 
 /// Opens output streams.
@@ -149,6 +158,185 @@ pub trait OutputFactory: Send + Sync {
 fn ring(spec: OutputSpec, buffer: Duration) -> (Producer<f32>, Consumer<f32>) {
     let frames = (f64::from(spec.sample_rate) * buffer.as_secs_f64()).ceil() as usize;
     RingBuffer::new(frames.max(1024) * spec.channels)
+}
+
+/// An output for hosts that fetch the audio themselves, such as a browser page feeding an
+/// `AudioWorklet`. The engine writes into the ring buffer as usual; the host takes samples
+/// with [`PullHandle::pull`] and reports how much of that it has not played yet.
+#[derive(Debug, Clone)]
+pub struct PullOutputFactory {
+    pub spec: OutputSpec,
+    handle: PullHandle,
+}
+
+impl PullOutputFactory {
+    /// The factory and the handle the host keeps.
+    pub fn new(spec: OutputSpec) -> (Self, PullHandle) {
+        let handle = PullHandle::default();
+        (
+            Self {
+                spec,
+                handle: handle.clone(),
+            },
+            handle,
+        )
+    }
+}
+
+/// The host side of a [`PullOutputFactory`]. Cheap to clone.
+#[derive(Debug, Clone, Default)]
+pub struct PullHandle {
+    inner: Arc<PullInner>,
+}
+
+#[derive(Default)]
+struct PullInner {
+    consumer: Mutex<Option<Consumer<f32>>>,
+    shared: Mutex<Option<Arc<OutputShared>>>,
+    flushed: AtomicBool,
+}
+
+impl std::fmt::Debug for PullInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PullInner")
+            .field("open", &self.consumer.lock().is_some())
+            .finish()
+    }
+}
+
+impl PullInner {
+    /// Drop buffered audio if the engine asked for it.
+    fn flush_if_requested(&self, consumer: &mut Consumer<f32>, shared: &OutputShared) {
+        if shared.flush.load(Ordering::Acquire) {
+            let n = consumer.slots();
+            if let Ok(chunk) = consumer.read_chunk(n) {
+                chunk.commit_all();
+            }
+            shared.played_frames.store(0, Ordering::Release);
+            shared.latency_frames.store(0, Ordering::Release);
+            shared.flush.store(false, Ordering::Release);
+            self.flushed.store(true, Ordering::Release);
+        }
+    }
+}
+
+impl PullHandle {
+    /// Take up to `out.len()` samples (whole frames, volume applied). Returns the number of
+    /// frames written; 0 while paused or when nothing is buffered. Never pads with silence.
+    pub fn pull(&self, out: &mut [f32]) -> usize {
+        let shared = self.inner.shared.lock().clone();
+        let mut guard = self.inner.consumer.lock();
+        let (Some(shared), Some(consumer)) = (shared, guard.as_mut()) else {
+            return 0;
+        };
+        self.inner.flush_if_requested(consumer, &shared);
+        if shared.paused.load(Ordering::Acquire) {
+            return 0;
+        }
+        let channels = self.channels();
+        let n = (consumer.slots() / channels * channels).min(out.len() / channels * channels);
+        if n == 0 {
+            return 0;
+        }
+        let gain = shared.gain();
+        if let Ok(chunk) = consumer.read_chunk(n) {
+            let (a, b) = chunk.as_slices();
+            for (o, s) in out.iter_mut().zip(a.iter().chain(b.iter())) {
+                *o = *s * gain;
+            }
+            chunk.commit_all();
+        }
+        shared
+            .played_frames
+            .fetch_add((n / channels) as u64, Ordering::AcqRel);
+        n / channels
+    }
+
+    fn channels(&self) -> usize {
+        2
+    }
+
+    /// Frames the host has taken but not played yet; position tracking subtracts them.
+    pub fn set_queued(&self, frames: u64) {
+        if let Some(s) = self.inner.shared.lock().as_ref() {
+            s.latency_frames.store(frames, Ordering::Release);
+        }
+    }
+
+    /// The host ran out of audio while playing.
+    pub fn note_underrun(&self) {
+        if let Some(s) = self.inner.shared.lock().as_ref()
+            && s.expect_audio.load(Ordering::Acquire)
+        {
+            s.underruns.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// True once after each flush: the host should drop the audio it still queues.
+    pub fn take_flushed(&self) -> bool {
+        self.inner.flushed.swap(false, Ordering::AcqRel)
+    }
+
+    /// Whether playback is paused, so the host can hold its own queue.
+    pub fn is_paused(&self) -> bool {
+        self.inner
+            .shared
+            .lock()
+            .as_ref()
+            .is_some_and(|s| s.is_paused())
+    }
+
+    /// Whether the engine has an output open.
+    pub fn is_open(&self) -> bool {
+        self.inner.consumer.lock().is_some()
+    }
+}
+
+struct PullOutput {
+    spec: OutputSpec,
+    inner: Arc<PullInner>,
+}
+
+impl AudioOutput for PullOutput {
+    fn spec(&self) -> OutputSpec {
+        self.spec
+    }
+
+    fn service(&mut self) {
+        let shared = self.inner.shared.lock().clone();
+        if let (Some(shared), Some(c)) = (shared, self.inner.consumer.lock().as_mut()) {
+            self.inner.flush_if_requested(c, &shared);
+        }
+    }
+}
+
+impl Drop for PullOutput {
+    fn drop(&mut self) {
+        *self.inner.consumer.lock() = None;
+        *self.inner.shared.lock() = None;
+    }
+}
+
+impl OutputFactory for PullOutputFactory {
+    fn open(
+        &self,
+        shared: Arc<OutputShared>,
+        buffer: Duration,
+    ) -> Result<(Box<dyn AudioOutput>, Producer<f32>), Error> {
+        if self.spec.channels != 2 {
+            return Err(Error::Output("the pull output is stereo only".into()));
+        }
+        let (producer, consumer) = ring(self.spec, buffer);
+        *self.handle.inner.consumer.lock() = Some(consumer);
+        *self.handle.inner.shared.lock() = Some(shared);
+        Ok((
+            Box::new(PullOutput {
+                spec: self.spec,
+                inner: self.handle.inner.clone(),
+            }),
+            producer,
+        ))
+    }
 }
 
 /// An output that discards audio in (accelerated) real time. Useful for tests, soak runs and
