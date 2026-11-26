@@ -242,7 +242,7 @@ impl OutputFactory for NullOutputFactory {
 }
 
 #[cfg(feature = "cpal-output")]
-pub use self::cpal_backend::CpalOutputFactory;
+pub use self::cpal_backend::{CpalOutputFactory, output_device_names};
 
 #[cfg(feature = "cpal-output")]
 mod cpal_backend {
@@ -255,6 +255,17 @@ mod cpal_backend {
     pub struct CpalOutputFactory {
         /// Device name to use instead of the default device.
         pub device: Option<String>,
+    }
+
+    /// Names of the output devices of the default host, for the `device` setting.
+    pub fn output_device_names() -> Vec<String> {
+        let host = cpal::default_host();
+        host.output_devices()
+            .map(|it| {
+                it.filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     struct CpalOutput {

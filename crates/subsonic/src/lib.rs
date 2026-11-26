@@ -816,7 +816,7 @@ mod tests {
     #[test]
     fn parse_error_response() {
         let body = br#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":40,"message":"Wrong username or password"}}}"#;
-        let err = parse_response::<()>("ping", body, &[], false).unwrap_err();
+        let err = parse_response::<()>("ping", body, &[], false).expect_err("api error");
         assert!(err.is_auth_error(), "{err}");
     }
 

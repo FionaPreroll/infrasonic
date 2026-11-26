@@ -14,7 +14,7 @@ authors = ["Fiona"]
 [workspace.dependencies]
 infrasonic-subsonic = { path = "crates/subsonic", version = "0.1.0" }
 infrasonic-engine = { path = "crates/engine", version = "0.1.0", default-features = false }
-infrasonic-core = { path = "crates/core", version = "0.1.0" }
+infrasonic-core = { path = "crates/core", version = "0.1.0", default-features = false }
 
 anyhow = "1"
 thiserror = "2"
@@ -50,6 +50,8 @@ all = { level = "warn", priority = -1 }
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
+# Commands and events are moved through channels once; boxing them buys nothing.
+large_enum_variant = "allow"
 
 [profile.release]
 lto = "thin"

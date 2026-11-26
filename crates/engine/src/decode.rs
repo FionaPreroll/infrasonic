@@ -269,12 +269,12 @@ impl TrackDecoder {
         self.eof = false;
         let delta = seeked.required_ts.get() - seeked.actual_ts.get();
         self.skip_frames = 0;
-        if delta > 0 {
-            if let Some(tb) = self.time_base {
-                let dt = tb.calc_time_saturating(seeked.required_ts).as_secs_f64()
-                    - tb.calc_time_saturating(seeked.actual_ts).as_secs_f64();
-                self.skip_frames = (dt * f64::from(self.rate)).round().max(0.0) as u64;
-            }
+        if delta > 0
+            && let Some(tb) = self.time_base
+        {
+            let dt = tb.calc_time_saturating(seeked.required_ts).as_secs_f64()
+                - tb.calc_time_saturating(seeked.actual_ts).as_secs_f64();
+            self.skip_frames = (dt * f64::from(self.rate)).round().max(0.0) as u64;
         }
         Ok(secs)
     }

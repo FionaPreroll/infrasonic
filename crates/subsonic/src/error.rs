@@ -27,7 +27,7 @@ pub enum Error {
 impl Error {
     /// Subsonic error code 40/41/44: wrong credentials or token auth not supported.
     pub fn is_auth_error(&self) -> bool {
-        matches!(self, Error::Api { code, .. } if matches!(code, 40 | 41 | 42 | 43 | 44))
+        matches!(self, Error::Api { code, .. } if (40..=44).contains(code))
     }
 
     /// Subsonic error code 70: the requested data was not found.

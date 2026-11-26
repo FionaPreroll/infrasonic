@@ -316,14 +316,21 @@ impl Session {
         Ok(())
     }
 
-    /// Shut down: optionally save the queue, then stop the engine.
-    pub async fn shutdown(self) -> Result<(), CoreError> {
+    /// Save the queue if configured and stop playback. The engine keeps running until the
+    /// session is dropped.
+    pub async fn finish(&self) -> Result<(), CoreError> {
         let result = if self.playback.save_queue_on_exit && !self.snapshot().queue.is_empty() {
             self.save_play_queue().await
         } else {
             Ok(())
         };
         self.engine.send(Command::Stop);
+        result
+    }
+
+    /// Shut down: optionally save the queue, then stop the engine.
+    pub async fn shutdown(self) -> Result<(), CoreError> {
+        let result = self.finish().await;
         drop(self.engine);
         result
     }

@@ -964,21 +964,21 @@ impl Worker {
             transitioned = true;
         }
         let rate = f64::from(self.spec.sample_rate.max(1));
-        if let Some(seg) = self.segments.front().copied() {
-            if seg.start_frame <= played {
-                if transitioned || self.current_uid != Some(seg.uid) {
-                    self.current_uid = Some(seg.uid);
-                    let idx = self.queue.index_of(seg.uid);
-                    self.queue.set_current(idx);
-                    self.duration = seg.duration;
-                    let entry = idx.and_then(|i| self.queue.get(i)).cloned();
-                    self.emit(Event::TrackChanged(entry));
-                    self.emit_position();
-                }
-                self.position = seg.offset + (played - seg.start_frame) as f64 / rate;
-                if let Some(d) = seg.duration {
-                    self.position = self.position.min(d);
-                }
+        if let Some(seg) = self.segments.front().copied()
+            && seg.start_frame <= played
+        {
+            if transitioned || self.current_uid != Some(seg.uid) {
+                self.current_uid = Some(seg.uid);
+                let idx = self.queue.index_of(seg.uid);
+                self.queue.set_current(idx);
+                self.duration = seg.duration;
+                let entry = idx.and_then(|i| self.queue.get(i)).cloned();
+                self.emit(Event::TrackChanged(entry));
+                self.emit_position();
+            }
+            self.position = seg.offset + (played - seg.start_frame) as f64 / rate;
+            if let Some(d) = seg.duration {
+                self.position = self.position.min(d);
             }
         }
         if self.end_of_queue
