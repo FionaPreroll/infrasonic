@@ -45,6 +45,10 @@ pub struct Args {
     #[arg(long)]
     pub tags: bool,
 
+    /// Start without contacting the server and play pinned songs only.
+    #[arg(long)]
+    pub offline: bool,
+
     /// Log file (default: platform state directory).
     #[arg(long, value_name = "FILE")]
     pub log_file: Option<PathBuf>,

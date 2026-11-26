@@ -7,56 +7,21 @@ use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, LineGauge, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+    Block, Borders, Cell, Clear, LineGauge, Paragraph, Row, Scrollbar, ScrollbarOrientation,
     ScrollbarState, Table, TableState, Wrap,
 };
 use unicode_width::UnicodeWidthStr;
 
+use infrasonic_subsonic::Child;
+
 use crate::app::{App, Overlay, Page, PickerItem};
 use crate::entry::{Entry, fmt_time};
-use crate::keys::{self, Context};
+use crate::keys::Context;
 use crate::list::ListView;
 use crate::pages;
-
-/// Colours and text styles.
-pub mod theme {
-    use ratatui::style::{Color, Modifier, Style};
-
-    pub const ACCENT: Color = Color::Cyan;
-
-    pub fn accent() -> Style {
-        Style::default().fg(ACCENT)
-    }
-    pub fn dim() -> Style {
-        Style::default().fg(Color::DarkGray)
-    }
-    pub fn error() -> Style {
-        Style::default().fg(Color::Red)
-    }
-    pub fn warn() -> Style {
-        Style::default().fg(Color::Yellow)
-    }
-    pub fn playing() -> Style {
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD)
-    }
-    pub fn header() -> Style {
-        Style::default()
-            .fg(Color::Gray)
-            .add_modifier(Modifier::BOLD)
-    }
-    pub fn border(focused: bool) -> Style {
-        if focused { accent() } else { dim() }
-    }
-    pub fn selected(focused: bool) -> Style {
-        if focused {
-            Style::default().bg(ACCENT).fg(Color::Black)
-        } else {
-            Style::default().add_modifier(Modifier::REVERSED)
-        }
-    }
-}
+use crate::palette::ItemKind;
+use crate::t;
+use crate::theme;
 
 /// Title and state of a list column.
 #[derive(Debug)]
@@ -194,15 +159,29 @@ pub fn draw_placeholder(f: &mut Frame, area: Rect, title: &str, text: Line<'stat
     f.render_widget(Paragraph::new(text).style(theme::dim()), mid);
 }
 
-pub fn starred_title(title: &str, starred: bool) -> Line<'static> {
-    if starred {
-        Line::from(vec![
-            Span::raw(title.to_string()),
-            Span::styled(" ★", theme::accent()),
-        ])
-    } else {
-        Line::from(title.to_string())
+/// `★★★☆☆` for a rating of 3.
+pub fn rating_stars(r: u8) -> String {
+    let r = usize::from(r.min(5));
+    format!("{}{}", "★".repeat(r), "☆".repeat(5 - r))
+}
+
+/// Star and rating after a song title.
+fn song_marks(c: &Child) -> Vec<Span<'static>> {
+    let mut v = Vec::new();
+    if c.is_starred() {
+        v.push(Span::styled(" ★", theme::accent()));
     }
+    if let Some(r) = c.user_rating.filter(|r| *r > 0) {
+        v.push(Span::styled(format!(" {r}/5"), theme::dim()));
+    }
+    v
+}
+
+/// A song title with its marks.
+pub fn song_title(c: &Child) -> Line<'static> {
+    let mut v = vec![Span::raw(c.title.clone())];
+    v.extend(song_marks(c));
+    Line::from(v)
 }
 
 /// A library entry as one line. `detail` adds track numbers, years and durations.
@@ -253,7 +232,7 @@ pub fn entry_line(e: &Entry, detail: bool) -> Line<'static> {
                 }
                 v.push(Span::styled(extra, theme::dim()));
             }
-            v.push(star);
+            v.extend(song_marks(c));
             Line::from(v)
         }
     }
@@ -283,6 +262,8 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         Page::Playlists => pages::playlists::draw(app, f, main),
         Page::Search => pages::search::draw(app, f, main),
         Page::Log => pages::logpage::draw(&mut app.log, f, main),
+        Page::Library => pages::library::draw(app, f, main),
+        Page::Lyrics => pages::lyrics::draw(app, f, main),
     }
     draw_player(app, f, player);
     draw_status(app, f, status);
@@ -310,11 +291,15 @@ fn draw_tabs(app: &mut App, f: &mut Frame, area: Rect, spin: &str) {
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
     let info = app.session.server_info();
-    let mut right = format!(
-        "{}@{} ",
-        app.session.profile_name(),
-        info.server_type.as_deref().unwrap_or("subsonic")
-    );
+    let mut right = if app.session.is_online() {
+        format!(
+            "{}@{} ",
+            app.session.profile_name(),
+            info.server_type.as_deref().unwrap_or("subsonic")
+        )
+    } else {
+        format!("{} · {} ", app.session.profile_name(), t!("player.offline"))
+    };
     if app.busy() > 0 {
         right = format!("{spin} {right}");
     }
@@ -337,7 +322,10 @@ fn draw_player(app: &mut App, f: &mut Frame, area: Rect) {
     if !repeat.is_empty() {
         flags.push(repeat.to_string());
     }
-    flags.push(format!("vol {}%", snap.volume));
+    if let Some(db) = snap.replay_gain_db {
+        flags.push(format!("RG {db:+.1} dB"));
+    }
+    flags.push(t!("player.volume", n = snap.volume));
     let block = Block::default()
         .borders(Borders::TOP)
         .border_style(theme::dim())
@@ -369,7 +357,7 @@ fn draw_player(app: &mut App, f: &mut Frame, area: Rect) {
         }
         None => Line::from(vec![
             Span::styled(format!("{icon} "), theme::dim()),
-            Span::styled("Nothing playing", theme::dim()),
+            Span::styled(t!("player.nothing"), theme::dim()),
         ]),
     };
     f.render_widget(Paragraph::new(title), line1);
@@ -413,10 +401,7 @@ fn draw_status(app: &mut App, f: &mut Frame, area: Rect) {
                 Style::default()
             },
         )),
-        None => Line::from(Span::styled(
-            "? help · / filter · p play/pause · < > tracks · , . seek · - = volume · q quit",
-            theme::dim(),
-        )),
+        None => Line::from(Span::styled(t!("status.hint"), theme::dim())),
     };
     f.render_widget(Paragraph::new(line), area);
 }
@@ -433,11 +418,13 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
 
 fn draw_overlay(app: &mut App, f: &mut Frame) {
     let screen = f.area();
+    let contexts = app.contexts();
+    let current_profile = app.session.profile_name().to_string();
     match &mut app.overlay {
         Some(Overlay::Help { scroll }) => {
             let mut lines = Vec::new();
             let mut last: Option<Context> = None;
-            for (ctx, keys, help) in keys::help_rows() {
+            for (ctx, keys, help) in app.keys.help_rows() {
                 if last != Some(ctx) {
                     if last.is_some() {
                         lines.push(Line::from(""));
@@ -459,9 +446,9 @@ fn draw_overlay(app: &mut App, f: &mut Frame) {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(theme::accent())
-                        .title(" Keys ")
+                        .title(format!(" {} ", t!("help.title")))
                         .title_bottom(
-                            Line::from(" j/k scroll · any other key closes ").right_aligned(),
+                            Line::from(format!(" {} ", t!("help.footer"))).right_aligned(),
                         ),
                 ),
                 area,
@@ -480,7 +467,9 @@ fn draw_overlay(app: &mut App, f: &mut Frame) {
                         .borders(Borders::ALL)
                         .border_style(theme::accent())
                         .title(format!(" {title} "))
-                        .title_bottom(Line::from(" Enter ok · Esc cancel ").right_aligned()),
+                        .title_bottom(
+                            Line::from(format!(" {} ", t!("prompt.footer"))).right_aligned(),
+                        ),
                 ),
                 area,
             );
@@ -495,8 +484,10 @@ fn draw_overlay(app: &mut App, f: &mut Frame) {
                         Block::default()
                             .borders(Borders::ALL)
                             .border_style(theme::warn())
-                            .title(" Confirm ")
-                            .title_bottom(Line::from(" y yes · any other key no ").right_aligned()),
+                            .title(format!(" {} ", t!("confirm.title")))
+                            .title_bottom(
+                                Line::from(format!(" {} ", t!("confirm.footer"))).right_aligned(),
+                            ),
                     ),
                 area,
             );
@@ -504,7 +495,7 @@ fn draw_overlay(app: &mut App, f: &mut Frame) {
         Some(Overlay::PlaylistPicker { songs, list }) => {
             let area = centered(screen, 50, 16);
             f.render_widget(Clear, area);
-            let title = format!("Add {} songs to", songs.len());
+            let title = t!("picker.title", n = songs.len());
             draw_list(
                 f,
                 area,
@@ -516,8 +507,99 @@ fn draw_overlay(app: &mut App, f: &mut Frame) {
                     empty: "",
                 },
                 |p| match p {
-                    PickerItem::New => Line::from(Span::styled("+ New playlist…", theme::accent())),
+                    PickerItem::New => Line::from(Span::styled(t!("picker.new"), theme::accent())),
                     PickerItem::Existing(p) => Line::from(p.name.clone()),
+                },
+            );
+        }
+        Some(Overlay::Palette { input, list }) => {
+            let h = (list.len() as u16 + 5).clamp(8, 22);
+            let area = centered(screen, 76, h);
+            f.render_widget(Clear, area);
+            let [inp, rest] =
+                Layout::vertical([Constraint::Length(3), Constraint::Min(3)]).areas(area);
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(":", theme::accent()),
+                    Span::raw(input.clone()),
+                    Span::styled("█", theme::accent()),
+                ]))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(theme::accent())
+                        .title(format!(" {} ", t!("palette.title")))
+                        .title_bottom(
+                            Line::from(format!(" {} ", t!("palette.footer"))).right_aligned(),
+                        ),
+                ),
+                inp,
+            );
+            draw_table(
+                f,
+                rest,
+                list,
+                &Column {
+                    title: crate::palette::title(&contexts),
+                    focused: true,
+                    loading: false,
+                    empty: t!("palette.nothing"),
+                },
+                Row::default(),
+                &[Constraint::Fill(1), Constraint::Length(16)],
+                |i| {
+                    let label = match &i.kind {
+                        ItemKind::Action(_) => Line::from(i.label.clone()),
+                        ItemKind::Command(c) => Line::from(vec![
+                            Span::styled(format!("{c} "), theme::accent()),
+                            Span::styled(i.label.clone(), theme::dim()),
+                        ]),
+                    };
+                    Row::new(vec![
+                        Cell::from(label),
+                        Cell::from(Span::styled(i.keys.clone(), theme::dim())),
+                    ])
+                },
+            );
+        }
+        Some(Overlay::Rate { name, .. }) => {
+            let area = centered(screen, 60, 4);
+            f.render_widget(Clear, area);
+            f.render_widget(
+                Paragraph::new(t!("rate.text"))
+                    .wrap(Wrap { trim: true })
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(theme::accent())
+                            .title(format!(" {} ", t!("rate.title", name = name))),
+                    ),
+                area,
+            );
+        }
+        Some(Overlay::ProfilePicker { list }) => {
+            let h = (list.len() as u16 + 2).clamp(4, 16);
+            let area = centered(screen, 50, h);
+            f.render_widget(Clear, area);
+            draw_list(
+                f,
+                area,
+                list,
+                &Column {
+                    title: t!("profile.title").to_string(),
+                    focused: true,
+                    loading: false,
+                    empty: "",
+                },
+                |p| {
+                    if *p == current_profile {
+                        Line::from(vec![
+                            Span::raw(p.clone()),
+                            Span::styled(" ●", theme::accent()),
+                        ])
+                    } else {
+                        Line::from(p.clone())
+                    }
                 },
             );
         }

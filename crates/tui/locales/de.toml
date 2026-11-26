@@ -1,0 +1,281 @@
+# Deutsche Texte des Terminal-Players. Schlüssel sind `tabelle.name`; `{x}` sind Platzhalter.
+# Ein Schlüssel mit `_one` am Ende ersetzt den normalen, wenn die Anzahl `{n}` 1 ist.
+
+[page]
+browser = "Browser"
+queue = "Warteschlange"
+playlists = "Playlists"
+search = "Suche"
+log = "Log"
+library = "Bibliothek"
+lyrics = "Liedtext"
+
+[context]
+global = "Überall"
+list = "Listen"
+browser = "Browser"
+queue = "Warteschlange"
+playlists = "Playlists"
+search = "Suche"
+library = "Bibliothek"
+
+[action]
+page = "Zu {page} wechseln"
+quit = "Beenden (speichert die Warteschlange auf dem Server)"
+help = "Diese Hilfe zeigen"
+palette = "Befehlspalette"
+next_page = "Nächste Seite"
+prev_page = "Vorige Seite"
+toggle_pause = "Abspielen / Pause"
+stop = "Stopp"
+next = "Nächster Titel"
+previous = "Voriger Titel (nach 3 s: Titel neu starten)"
+seek_forward = "Vorspulen"
+seek_back = "Zurückspulen"
+volume_up = "Lauter"
+volume_down = "Leiser"
+cycle_repeat = "Wiederholen: aus, alle, einen"
+add_random = "Zufällige Titel anhängen"
+scan = "Bibliothek auf dem Server neu einlesen"
+star_playing = "Laufenden Titel markieren / Markierung entfernen"
+bookmark = "Lesezeichen an der Stelle im laufenden Titel"
+switch_profile = "Serverprofil wechseln"
+redraw = "Bildschirm neu zeichnen"
+up = "Hoch"
+down = "Runter"
+page_up = "Seite hoch"
+page_down = "Seite runter"
+top = "Erster Eintrag"
+bottom = "Letzter Eintrag"
+left = "Linke Spalte / übergeordneter Ordner"
+right = "Rechte Spalte / öffnen"
+focus_next = "Nächste Spalte"
+filter = "Liste filtern (unscharf)"
+back = "Filter löschen / zurück"
+activate = "Öffnen oder ab hier abspielen"
+append = "An die Warteschlange anhängen"
+play_next = "Als Nächstes spielen"
+star = "Markieren / Markierung entfernen"
+rate = "Bewerten (0–5 Sterne)"
+pin = "Für offline behalten"
+add_to_playlist = "Zu Playlist hinzufügen"
+refresh = "Neu vom Server laden"
+similar = "Ähnliche Titel einreihen"
+remove = "Entfernen"
+clear_queue = "Warteschlange leeren"
+move_up = "Titel nach oben"
+move_down = "Titel nach unten"
+save_queue = "Warteschlange als Playlist speichern"
+shuffle = "Mischen"
+load_server_queue = "Auf dem Server gespeicherte Warteschlange laden"
+jump_to_playing = "Zum laufenden Titel springen"
+new_playlist = "Neue Playlist"
+delete_playlist = "Playlist löschen / Titel entfernen"
+edit_query = "Suche bearbeiten"
+
+[action.browser]
+append = "An die Warteschlange anhängen (Ordner rekursiv)"
+
+[action.queue]
+activate = "Diesen Titel spielen"
+remove = "Aus der Warteschlange entfernen"
+add_to_playlist = "Titel zu Playlist hinzufügen"
+
+[action.playlists]
+star = "Titel markieren / Markierung entfernen"
+refresh = "Playlists neu laden"
+
+[action.search]
+activate = "Abspielen"
+
+[action.library]
+remove = "Lesezeichen löschen / nicht mehr offline behalten"
+
+[command]
+volume = "Lautstärke setzen (0–100)"
+seek = "Zu einer Zeit springen, etwa 1:30"
+replaygain = "ReplayGain: off, track, album oder auto"
+bitrate = "Bitrate-Grenze in kbit/s (0 = Original), optional mit Format"
+theme = "Farbschema wechseln"
+language = "Sprache: en, de oder auto"
+profile = "Zu einem anderen Serverprofil wechseln"
+years = "Alben aus einem Jahr oder Zeitraum, etwa 1990-1999"
+cache = "Cache-Belegung zeigen; `cache clear` leert ihn"
+
+[status]
+hint = "? Hilfe · : Befehle · / Filter · p Play/Pause · < > Titel · , . Spulen · - = Lautstärke · q Ende"
+offline = "Offline: nur gepinnte Titel sind abspielbar"
+connected = "Verbunden"
+restored_queue = "{n} Titel aus der Server-Warteschlange wiederhergestellt"
+restored_queue_one = "1 Titel aus der Server-Warteschlange wiederhergestellt"
+playing_n = "Spiele {n} Titel"
+playing_n_one = "Spiele 1 Titel"
+resuming = "Weiter bei {time}"
+added_n = "{n} Titel angehängt"
+added_n_one = "1 Titel angehängt"
+next_n = "{n} Titel kommen als Nächstes"
+next_n_one = "1 Titel kommt als Nächstes"
+loading = "Lade {name}…"
+starred = "Markiert"
+unstarred = "Markierung entfernt"
+rating_removed = "Bewertung entfernt"
+rated = "Mit {n} Sternen bewertet"
+rated_one = "Mit 1 Stern bewertet"
+pinning = "Lade {n} Titel für offline herunter…"
+pinning_one = "Lade 1 Titel für offline herunter…"
+pinned_all = "Alle gepinnten Titel sind offline verfügbar"
+pinning_left = "Noch {n} Titel herunterzuladen"
+pinning_left_one = "Noch 1 Titel herunterzuladen"
+unpinned = "{name} wird nicht mehr offline behalten"
+added_to_playlist = "{n} Titel zu {name} hinzugefügt"
+added_to_playlist_one = "1 Titel zu {name} hinzugefügt"
+bookmarked = "Lesezeichen bei {time} gespeichert"
+bookmark_deleted = "Lesezeichen gelöscht"
+scan_started = "Einlesen der Bibliothek gestartet"
+playlist_created = "Playlist {name} angelegt"
+queue_saved = "Warteschlange als {name} gespeichert"
+playlist_deleted = "Playlist gelöscht"
+removed_from_playlist = "Aus der Playlist entfernt"
+server_queue_empty = "Die Server-Warteschlange ist leer"
+loaded_queue = "{n} Titel aus der Server-Warteschlange geladen"
+loaded_queue_one = "1 Titel aus der Server-Warteschlange geladen"
+cache_cleared = "Cache geleert"
+cache_usage = "Cache: {n} Dateien, {mb} MB, {pinned} gepinnte Titel"
+queue_ended = "Ende der Warteschlange"
+similar = "Suche Titel ähnlich wie {name}…"
+replaygain = "ReplayGain: {mode}"
+bitrate_original = "Streame die Originaldateien"
+bitrate = "Streame höchstens {n} kbit/s"
+theme = "Farbschema: {name}"
+language = "Sprache gewechselt"
+
+[error]
+load_server_queue = "Laden der Server-Warteschlange fehlgeschlagen: {e}"
+nothing_to_play = "Nichts zum Abspielen"
+nothing_playing = "Es läuft nichts"
+star = "Markieren fehlgeschlagen: {e}"
+rate = "Bewerten fehlgeschlagen: {e}"
+no_store = "Es gibt keinen lokalen Cache (playback.cache_mb ist 0)"
+update_playlist = "Ändern von {name} fehlgeschlagen: {e}"
+bookmark = "Lesezeichen fehlgeschlagen: {e}"
+one_profile = "Es gibt nur ein Serverprofil"
+unknown_profile = "Unbekanntes Profil {name}"
+create_playlist = "Anlegen von {name} fehlgeschlagen: {e}"
+years = "Kein Jahr und kein Zeitraum: {input}"
+save_playlist = "Speichern von {name} fehlgeschlagen: {e}"
+delete = "Löschen fehlgeschlagen: {e}"
+cache = "Cache: {e}"
+load_songs = "Laden der Titel fehlgeschlagen: {e}"
+scan = "Einlesen fehlgeschlagen: {e}"
+load_artists = "Laden der Künstler fehlgeschlagen: {e}"
+load = "Laden fehlgeschlagen: {e}"
+load_playlists = "Laden der Playlists fehlgeschlagen: {e}"
+load_playlist = "Laden der Playlist fehlgeschlagen: {e}"
+load_list = "Laden der Liste fehlgeschlagen: {e}"
+remove = "Entfernen fehlgeschlagen: {e}"
+remove_here = "Hier lassen sich nur Lesezeichen und gepinnte Titel entfernen"
+search = "Suche fehlgeschlagen: {e}"
+filter_move = "Zum Verschieben erst den Filter löschen"
+queue_empty = "Die Warteschlange ist leer"
+unknown_command = "Unbekannter Befehl: {cmd}"
+argument = "{cmd}: ungültiges Argument „{arg}“"
+
+[prompt]
+new_playlist = "Neue Playlist"
+save_queue = "Warteschlange als Playlist speichern"
+years = "Jahr oder Zeitraum (z. B. 1990-1999)"
+footer = "Enter ok · Esc abbrechen"
+
+[confirm]
+title = "Bestätigen"
+footer = "y ja · jede andere Taste nein"
+overwrite_playlist = "Die Titel der Playlist „{name}“ durch die Warteschlange ersetzen?"
+delete_playlist = "Playlist „{name}“ löschen?"
+load_server_queue = "Die Warteschlange durch die auf dem Server gespeicherte ersetzen?"
+clear_cache = "Alle zwischengespeicherten Titel löschen? Gepinnte bleiben."
+
+[picker]
+title = "{n} Titel hinzufügen zu"
+title_one = "1 Titel hinzufügen zu"
+new = "+ Neue Playlist…"
+
+[player]
+nothing = "Es läuft nichts"
+offline = "offline"
+volume = "Lautst. {n}%"
+repeat_all = "alle wiederholen"
+repeat_one = "einen wiederholen"
+
+[library]
+lists = "Listen"
+songs = "Titel"
+newest = "Zuletzt hinzugefügt"
+recent = "Zuletzt gespielt"
+frequent = "Am meisten gespielt"
+random = "Zufällige Alben"
+starred_albums = "Markierte Alben"
+highest = "Am besten bewertet"
+by_name = "Alben A–Z"
+by_artist = "Alben nach Künstler"
+years = "Nach Jahr…"
+starred_songs = "Markierte Titel"
+bookmarks = "Lesezeichen"
+pinned = "Offline (gepinnt)"
+empty = "Hier ist nichts"
+no_pins = "Keine gepinnten Titel. O auf einem Titel, Album oder einer Playlist behält sie offline."
+no_bookmarks = "Keine Lesezeichen. b während der Wiedergabe speichert die Stelle."
+
+[browser]
+artists = "Künstler"
+artists_tags = "Künstler (Tags)"
+no_artists = "Keine Künstler"
+empty = "Leer"
+hint = "Künstler wählen und Enter drücken"
+
+[playlists]
+none = "Keine Playlists. n legt eine an."
+empty = "Leere Playlist"
+
+[column]
+title = "Titel"
+artist = "Künstler"
+album = "Album"
+time = "Dauer"
+
+[search]
+hint = "e zum Suchen"
+artists = "Künstler"
+albums = "Alben"
+songs = "Titel"
+
+[log]
+title = "Log (UTC)"
+empty = "Noch nichts geloggt"
+
+[queue]
+title = "Warteschlange · {n} Titel · {time}"
+title_one = "Warteschlange · 1 Titel · {time}"
+empty = "Die Warteschlange ist leer. Titel mit a oder Enter im Browser anhängen, oder r für Zufallstitel."
+now_playing = "Läuft gerade"
+starred = "markiert"
+
+[lyrics]
+synced = "synchron"
+nothing_playing = "Es läuft nichts"
+none = "Kein Liedtext für diesen Titel"
+
+[help]
+title = "Tasten"
+footer = "j/k blättern · jede andere Taste schließt"
+
+[palette]
+title = "Befehl"
+footer = "Enter ausführen · Tab ergänzen · Esc schließen"
+nothing = "Keine passende Aktion. Enter führt die Eingabe als Befehl aus."
+
+[rate]
+title = "{name} bewerten"
+text = "1–5 für Sterne, 0 entfernt die Bewertung, jede andere Taste bricht ab."
+
+[profile]
+title = "Serverprofil"

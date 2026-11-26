@@ -179,6 +179,14 @@ pub struct UiConfig {
     pub cover_art: bool,
     pub mouse: bool,
     pub browse_mode: BrowseMode,
+    /// `auto` (from the environment), `en` or `de`.
+    pub language: String,
+    /// A built-in theme (`default`, `light`, `mono`) or the name of a file in the `themes`
+    /// directory next to the configuration file.
+    pub theme: String,
+    /// Colour overrides on top of the theme, e.g. `accent = "#d08770"`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub colors: BTreeMap<String, String>,
 }
 
 impl Default for UiConfig {
@@ -188,6 +196,26 @@ impl Default for UiConfig {
             cover_art: true,
             mouse: true,
             browse_mode: BrowseMode::Folders,
+            language: "auto".into(),
+            theme: "default".into(),
+            colors: BTreeMap::new(),
+        }
+    }
+}
+
+/// One key or a list of keys in `[keys]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum KeyList {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl KeyList {
+    pub fn keys(&self) -> Vec<String> {
+        match self {
+            Self::One(k) => vec![k.clone()],
+            Self::Many(v) => v.clone(),
         }
     }
 }
@@ -201,6 +229,9 @@ pub struct Config {
     pub profiles: BTreeMap<String, Profile>,
     pub playback: PlaybackConfig,
     pub ui: UiConfig,
+    /// Key binding overrides: `"context.action" = ["key", …]`, e.g. `"queue.remove" = "x"`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub keys: BTreeMap<String, KeyList>,
 }
 
 /// Locations of infrasonic's files.
@@ -505,6 +536,36 @@ mod tests {
         );
         let text = c.to_toml();
         let back = Config::parse(&text, Path::new("x")).expect("parse");
+        assert_eq!(back, c);
+    }
+
+    #[test]
+    fn parses_keys_themes_and_playback_options() {
+        let text = r##"
+[playback]
+replay_gain = "album"
+replay_gain_preamp = -2.5
+cache_mb = 0
+
+[ui]
+language = "de"
+theme = "nord"
+
+[ui.colors]
+accent = "#88c0d0"
+
+[keys]
+"queue.remove" = ["x", "Del"]
+"global.toggle_pause" = "Ctrl-t"
+"##;
+        let c = Config::parse(text, Path::new("cfg")).expect("parse");
+        assert_eq!(c.playback.replay_gain, ReplayGainSetting::Album);
+        assert_eq!(c.playback.cache_mb, 0);
+        assert_eq!(c.ui.language, "de");
+        assert_eq!(c.ui.colors["accent"], "#88c0d0");
+        assert_eq!(c.keys["queue.remove"].keys(), ["x", "Del"]);
+        assert_eq!(c.keys["global.toggle_pause"].keys(), ["Ctrl-t"]);
+        let back = Config::parse(&c.to_toml(), Path::new("x")).expect("roundtrip");
         assert_eq!(back, c);
     }
 

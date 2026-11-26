@@ -15,7 +15,9 @@ use crate::app::{App, ConfirmAction, Overlay, PromptAction};
 use crate::entry::fmt_time;
 use crate::keys::Action;
 use crate::list::ListView;
-use crate::ui::{self, theme};
+use crate::t;
+use crate::theme;
+use crate::ui;
 
 #[derive(Debug, Default)]
 pub struct QueuePage {
@@ -75,7 +77,7 @@ impl App {
             Action::ClearQueue => self.send(Command::Clear),
             Action::MoveUp | Action::MoveDown => {
                 if self.queue.list.has_filter_applied() {
-                    self.error("Clear the filter to move songs");
+                    self.error(t!("error.filter_move"));
                     return;
                 }
                 if let Some(i) = sel {
@@ -96,6 +98,18 @@ impl App {
                     self.toggle_star(StarTarget::id(t.id.clone()), t.starred);
                 }
             }
+            Action::Rate => {
+                if let Some(e) = self.queue.list.selected() {
+                    let (id, name) = (e.track.id.clone(), e.track.title.clone());
+                    self.rate(id, name);
+                }
+            }
+            Action::Pin => {
+                if let Some(e) = self.queue.list.selected() {
+                    let c = infrasonic_core::child_from_track(&e.track);
+                    self.pin_songs(vec![c]);
+                }
+            }
             Action::AddToPlaylist => {
                 if let Some(e) = self.queue.list.selected() {
                     let id = e.track.id.clone();
@@ -104,11 +118,11 @@ impl App {
             }
             Action::SaveQueue => {
                 if self.snap.queue.is_empty() {
-                    self.error("The queue is empty");
+                    self.error(t!("error.queue_empty"));
                 } else {
                     self.playlists_ensure_loaded();
                     self.overlay = Some(Overlay::Prompt {
-                        title: "Save queue as playlist".into(),
+                        title: t!("prompt.save_queue").into(),
                         input: String::new(),
                         action: PromptAction::SaveQueue,
                     });
@@ -117,7 +131,7 @@ impl App {
             Action::Shuffle => self.send(Command::Shuffle),
             Action::LoadServerQueue => {
                 self.overlay = Some(Overlay::Confirm {
-                    text: "Replace the queue with the one saved on the server?".into(),
+                    text: t!("confirm.load_server_queue").into(),
                     action: ConfirmAction::LoadServerQueue,
                 });
             }
@@ -140,12 +154,19 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
     };
     let current = app.snap.current.as_ref().map(|c| c.uid);
     let total: f64 = app.snap.queue.iter().filter_map(|e| e.track.duration).sum();
-    let title = format!(
-        "Queue · {} songs · {}",
-        app.snap.queue.len(),
-        fmt_time(total)
+    let title = t!(
+        "queue.title",
+        n = app.snap.queue.len(),
+        time = fmt_time(total)
     );
-    let header = Row::new(["", "Title", "Artist", "Album", "Time"]).style(theme::header());
+    let header = Row::new([
+        "",
+        t!("column.title"),
+        t!("column.artist"),
+        t!("column.album"),
+        t!("column.time"),
+    ])
+    .style(theme::header());
     let widths = [
         Constraint::Length(2),
         Constraint::Fill(3),
@@ -161,7 +182,7 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
             title,
             focused: true,
             loading: false,
-            empty: "The queue is empty. Add songs with a or Enter in the browser, or r for random songs.",
+            empty: t!("queue.empty"),
         },
         header,
         &widths,
@@ -199,12 +220,12 @@ fn draw_details(app: &mut App, f: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border(false))
-        .title(" Now playing ");
+        .title(format!(" {} ", t!("queue.now_playing")));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let Some(cur) = app.snap.current.clone() else {
         f.render_widget(
-            Paragraph::new("Nothing is playing").style(theme::dim()),
+            Paragraph::new(t!("player.nothing")).style(theme::dim()),
             inner,
         );
         return;
@@ -238,8 +259,31 @@ fn draw_details(app: &mut App, f: &mut Frame, area: Rect) {
     if !facts.is_empty() {
         lines.push(Line::from(Span::styled(facts.join(" · "), theme::dim())));
     }
+    let mut marks = Vec::new();
     if t.starred {
-        lines.push(Line::from(Span::styled("★ starred", theme::accent())));
+        marks.push(Span::styled(
+            format!("★ {}", t!("queue.starred")),
+            theme::accent(),
+        ));
+    }
+    if let Some(r) = t.rating {
+        marks.push(Span::styled(
+            format!("  {}", ui::rating_stars(r)),
+            theme::accent(),
+        ));
+    }
+    if !marks.is_empty() {
+        lines.push(Line::from(marks));
+    }
+    if let Some(db) = app.snap.replay_gain_db {
+        lines.push(Line::from(Span::styled(
+            format!("ReplayGain {db:+.1} dB"),
+            theme::dim(),
+        )));
+    }
+    if let Some(l) = app.lyrics_now() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(format!("♪ {l}"), theme::accent())));
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), text);
 }

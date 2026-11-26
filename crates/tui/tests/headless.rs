@@ -48,6 +48,7 @@ impl Harness {
             None,
         );
         app.start();
+        infrasonic::i18n::set_language(infrasonic::i18n::Lang::En);
         let term = Terminal::new(TestBackend::new(130, 40)).expect("terminal");
         Self {
             app,
@@ -217,6 +218,55 @@ async fn check(server: &Server) {
         .await
         .expect("starred");
     assert!(!starred.song.iter().any(|s| s.id == id), "{}", h.name);
+
+    // Rate the song, see the rating, remove it again.
+    h.key(KeyCode::Char('*'));
+    h.wait_for("Rate Black Hole").await;
+    h.key(KeyCode::Char('4'));
+    h.settle().await;
+    h.wait_for("Black Hole · Black Noise Collective · 0:03 4/5")
+        .await;
+    let c = h.app.session.client();
+    assert_eq!(c.get_song(&id).await.expect("song").user_rating, Some(4));
+    h.key(KeyCode::Char('*'));
+    h.key(KeyCode::Char('0'));
+    h.settle().await;
+    let c = h.app.session.client();
+    let r = c.get_song(&id).await.expect("song").user_rating;
+    assert!(r.is_none_or(|r| r == 0), "{}: {r:?}", h.name);
+
+    // Command palette: an action by its description, and a command with an argument.
+    h.key(KeyCode::Char(':'));
+    h.wait_for(" Command ").await;
+    h.chars("volume 40");
+    h.key(KeyCode::Enter);
+    h.wait_for("vol 40%").await;
+    h.key(KeyCode::Char(':'));
+    h.chars("redraw");
+    h.wait_for("Redraw the screen").await;
+    h.key(KeyCode::Enter);
+    assert!(h.app.overlay.is_none());
+    h.key(KeyCode::Char(':'));
+    h.chars("language de");
+    h.key(KeyCode::Enter);
+    h.wait_for("2 Warteschlange").await;
+    h.key(KeyCode::Char(':'));
+    h.chars("language en");
+    h.key(KeyCode::Enter);
+    h.wait_for("2 Queue").await;
+
+    // Library: the newest albums, then the songs of one.
+    h.key(KeyCode::Char('6'));
+    assert_eq!(h.app.page, Page::Library);
+    h.settle().await;
+    h.wait_for("Recently added").await;
+    h.wait_for("Formats Live").await;
+
+    // Lyrics of the playing song (the test files have none).
+    h.key(KeyCode::Char('7'));
+    assert_eq!(h.app.page, Page::Lyrics);
+    h.settle().await;
+    h.wait_for("No lyrics for this song").await;
 
     // Help and quit.
     h.key(KeyCode::Char('?'));

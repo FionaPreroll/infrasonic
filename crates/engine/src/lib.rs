@@ -62,6 +62,8 @@ pub struct Track {
     pub album_id: Option<String>,
     pub artist_id: Option<String>,
     pub starred: bool,
+    /// The user's rating, 1–5.
+    pub rating: Option<u8>,
     /// ReplayGain values from the server. Tags in the file fill in what is missing.
     pub replay_gain: Option<ReplayGain>,
 }

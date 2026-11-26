@@ -32,6 +32,7 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 clap = { version = "4.6", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 unicode-width = "0.2"
+toml.workspace = true
 souvlaki = { version = "0.9.3", optional = true, default-features = false, features = ["use_zbus"] }
 ratatui-image = { version = "11.1", optional = true, default-features = false, features = ["crossterm"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp", "gif"] }
@@ -39,6 +40,7 @@ image = { version = "0.25", optional = true, default-features = false, features 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 infrasonic-e2e = { path = "../e2e" }
+tempfile.workspace = true
 
 [lints]
 workspace = true

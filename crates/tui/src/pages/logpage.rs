@@ -8,7 +8,9 @@ use tracing::Level;
 
 use crate::list::{Filterable, ListView};
 use crate::logging::{LogBuffer, LogLine};
-use crate::ui::{self, Column, theme};
+use crate::t;
+use crate::theme;
+use crate::ui::{self, Column};
 
 impl Filterable for LogLine {
     fn filter_text(&self) -> String {
@@ -54,10 +56,10 @@ pub fn draw(page: &mut LogPage, f: &mut Frame, area: Rect) {
         area,
         &mut page.list,
         &Column {
-            title: "Log (UTC)".into(),
+            title: t!("log.title").into(),
             focused: true,
             loading: false,
-            empty: "Nothing logged yet",
+            empty: t!("log.empty"),
         },
         |l| {
             let style = match l.level {

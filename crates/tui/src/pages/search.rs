@@ -12,7 +12,9 @@ use crate::app::{App, Enqueue, Msg};
 use crate::entry::Entry;
 use crate::keys::Action;
 use crate::list::{ListLike, ListView};
-use crate::ui::{self, Column, theme};
+use crate::t;
+use crate::theme;
+use crate::ui::{self, Column};
 
 #[derive(Debug, Default)]
 pub struct SearchPage {
@@ -24,8 +26,6 @@ pub struct SearchPage {
     pub columns: [ListView<Entry>; 3],
     pub focus: usize,
 }
-
-const TITLES: [&str; 3] = ["Artists", "Albums", "Songs"];
 
 impl SearchPage {
     pub fn focused(&mut self) -> &mut dyn ListLike {
@@ -106,7 +106,7 @@ impl App {
                 }
                 s.focus = s.columns.iter().position(|c| !c.is_empty()).unwrap_or(0);
             }
-            Err(e) => self.error(format!("Search failed: {e}")),
+            Err(e) => self.error(t!("error.search", e = e)),
         }
     }
 
@@ -147,6 +147,16 @@ impl App {
                     self.toggle_star(e.star_target(), e.starred());
                 }
             }
+            Action::Rate => {
+                if let Some(e) = sel {
+                    self.rate(e.id().to_string(), e.name().to_string());
+                }
+            }
+            Action::Pin => {
+                if let Some(e) = sel {
+                    self.pin_entry(e);
+                }
+            }
             Action::AddToPlaylist => {
                 if let Some(e) = sel {
                     let s = self.session.clone();
@@ -165,12 +175,12 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border(s.editing))
-        .title(" Search ");
+        .title(format!(" {} ", t!("page.search")));
     let mut spans = vec![Span::raw(s.query.clone())];
     if s.editing {
         spans.push(Span::styled("█", theme::accent()));
     } else if s.query.is_empty() {
-        spans.push(Span::styled("Press e to search", theme::dim()));
+        spans.push(Span::styled(t!("search.hint"), theme::dim()));
     }
     f.render_widget(Paragraph::new(Line::from(spans)).block(block), input);
     let cols = Layout::horizontal([
@@ -188,7 +198,12 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
             cols[i],
             list,
             &Column {
-                title: TITLES[i].into(),
+                title: [
+                    t!("search.artists"),
+                    t!("search.albums"),
+                    t!("search.songs"),
+                ][i]
+                    .into(),
                 focused: !editing && focus == i,
                 loading: searching,
                 empty: "",

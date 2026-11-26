@@ -25,13 +25,26 @@ infrasonic https://user:password@music.example.org   # STMPS-style one-off conne
 | 3 Playlists | Your playlists and their songs: play, queue, create, delete, remove songs. |
 | 4 Search | Server search with artists, albums and songs side by side. |
 | 5 Log | What happened, including errors from the server. |
+| 6 Library | Album lists (recently added, most played, top rated, A–Z, by year…), genres, starred songs, bookmarks and the songs pinned for offline use. |
+| 7 Lyrics | Lyrics of the playing song. Synchronised lyrics (OpenSubsonic) follow the music. |
 
 Press `?` for every key. The defaults follow STMPS: `p` or Space play/pause, `<`/`>` previous and
 next track, `,`/`.` seek, `-`/`=` volume, `Enter` play, `a` add to queue, `i` play next, `y` star,
 `A` add to a playlist, `r` add random songs, `S` similar songs, `/` filter any list, `q` quit.
 Lists also take `j`/`k`, `g`/`G`, PgUp/PgDn and the mouse. In the queue, `K`/`J` move a song.
+New in infrasonic: `*` rates a song (0–5 stars), `O` keeps songs, albums or playlists for offline
+use, `b` bookmarks the position in the playing song, and `F2` switches between server profiles.
 
-Also included: scrobbling (Last.fm rules), gapless playback with preloading, queue sync with the
+`:` opens the command palette. Type to filter every action of the current page, or enter a
+command: `volume 40`, `seek 1:30`, `replaygain album`, `bitrate 192 opus`, `theme light`,
+`language de`, `profile work`, `years 1990-1999`, `cache` (or `cache clear`).
+
+Without a connection to the server (or with `--offline`), infrasonic starts with the pinned songs
+and plays them from the local cache.
+
+Also included: scrobbling (Last.fm rules), gapless playback for every format (also across sample
+rate changes), ReplayGain from the server or the file tags, a persistent audio cache with
+preloading of the next songs, queue sync with the
 server (restored on start, saved on quit), system media keys (MPRIS on Linux, Now Playing on
 macOS, SMTC on Windows) and cover art in Kitty, iTerm2 and Sixel terminals (half blocks
 elsewhere).
@@ -60,14 +73,35 @@ save_queue_on_exit = true
 random_songs = 50
 seek_step = 10
 # device = "…"            # see infrasonic --list-devices
+replay_gain = "auto"      # off, track, album, or auto (album gain when the queue plays an album)
+replay_gain_preamp = 0.0  # dB
+replay_gain_fallback = 0.0  # dB for songs without ReplayGain data
+prevent_clipping = true
+cache_mb = 1024           # audio cache; pinned songs do not count and are never evicted
+preload_songs = 2         # songs downloaded ahead of the playing one
 
 [ui]
 cover_art = true
 mouse = true
 browse_mode = "folders"   # or "tags"
+language = "auto"         # en, de, or auto (from LANG)
+theme = "default"         # default, light, mono, or a file themes/NAME.toml next to this file
+
+[ui.colors]               # single colours on top of the theme: names, "#rrggbb" or 0–255
+# accent = "#88c0d0"      # also dim, error, warn, playing, header, selected_fg, selected_bg
+
+[keys]                    # "context.action" = key or list; see the help (?) for the names
+# "queue.remove" = ["x", "Del"]
+# "global.toggle_pause" = "Ctrl-t"
 ```
 
-Other options: `--profile NAME`, `--list`, `--add-profile`, `--config FILE`, `--log-file FILE`.
+Contexts are `global`, `list`, `browser`, `queue`, `playlists`, `search` and `library`; action
+names are the ones the command palette accepts, such as `toggle_pause`, `star`, `pin` or
+`page_6`. Keys look like `x`, `X`, `Ctrl-x`, `Alt-x`, `Enter`, `Space`, `Tab`, `Del`, `PgUp` or
+`F5`. Conflicting bindings are reported in the log.
+
+Other options: `--profile NAME`, `--list`, `--add-profile`, `--config FILE`, `--log-file FILE`,
+`--offline`.
 The log goes to `~/.local/state/infrasonic/infrasonic.log`; `INFRASONIC_LOG=debug` makes it
 verbose.
 

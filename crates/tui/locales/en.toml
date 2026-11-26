@@ -1,0 +1,281 @@
+# English texts of the terminal player. Keys are `table.name`; `{x}` are placeholders.
+# A key ending in `_one` is used instead of the plain key when the count `{n}` is 1.
+
+[page]
+browser = "Browser"
+queue = "Queue"
+playlists = "Playlists"
+search = "Search"
+log = "Log"
+library = "Library"
+lyrics = "Lyrics"
+
+[context]
+global = "Global"
+list = "Lists"
+browser = "Browser"
+queue = "Queue"
+playlists = "Playlists"
+search = "Search"
+library = "Library"
+
+[action]
+page = "Go to {page}"
+quit = "Quit (saves the queue on the server)"
+help = "Show this help"
+palette = "Command palette"
+next_page = "Next page"
+prev_page = "Previous page"
+toggle_pause = "Play / pause"
+stop = "Stop"
+next = "Next track"
+previous = "Previous track (restarts after 3 s)"
+seek_forward = "Seek forward"
+seek_back = "Seek back"
+volume_up = "Volume up"
+volume_down = "Volume down"
+cycle_repeat = "Repeat: off, all, one"
+add_random = "Add random songs to the queue"
+scan = "Start a library scan on the server"
+star_playing = "Star / unstar the playing song"
+bookmark = "Bookmark the position in the playing song"
+switch_profile = "Switch server profile"
+redraw = "Redraw the screen"
+up = "Up"
+down = "Down"
+page_up = "Page up"
+page_down = "Page down"
+top = "First entry"
+bottom = "Last entry"
+left = "Left column / parent directory"
+right = "Right column / open"
+focus_next = "Next column"
+filter = "Filter the list (fuzzy)"
+back = "Clear filter / go back"
+activate = "Open, or play from here"
+append = "Add to queue"
+play_next = "Play next"
+star = "Star / unstar"
+rate = "Rate (0–5 stars)"
+pin = "Keep for offline use"
+add_to_playlist = "Add to playlist"
+refresh = "Reload from the server"
+similar = "Queue similar songs"
+remove = "Remove"
+clear_queue = "Clear the queue"
+move_up = "Move song up"
+move_down = "Move song down"
+save_queue = "Save queue as playlist"
+shuffle = "Shuffle"
+load_server_queue = "Load the queue saved on the server"
+jump_to_playing = "Jump to the playing song"
+new_playlist = "New playlist"
+delete_playlist = "Delete playlist / remove song"
+edit_query = "Edit the search"
+
+[action.browser]
+append = "Add to queue (directories recursively)"
+
+[action.queue]
+activate = "Play this song"
+remove = "Remove from queue"
+add_to_playlist = "Add song to playlist"
+
+[action.playlists]
+star = "Star / unstar song"
+refresh = "Reload playlists"
+
+[action.search]
+activate = "Play"
+
+[action.library]
+remove = "Delete bookmark / unpin"
+
+[command]
+volume = "Set the volume (0–100)"
+seek = "Jump to a time, like 1:30"
+replaygain = "ReplayGain: off, track, album or auto"
+bitrate = "Bitrate limit in kbit/s (0 = original), optionally a format"
+theme = "Switch the colour theme"
+language = "Language: en, de or auto"
+profile = "Switch to another server profile"
+years = "Albums from a year or a range, like 1990-1999"
+cache = "Show the cache usage; `cache clear` empties it"
+
+[status]
+hint = "? help · : commands · / filter · p play/pause · < > tracks · , . seek · - = volume · q quit"
+offline = "Offline: only pinned songs can be played"
+connected = "Connected"
+restored_queue = "Restored {n} songs from the server queue"
+restored_queue_one = "Restored 1 song from the server queue"
+playing_n = "Playing {n} songs"
+playing_n_one = "Playing 1 song"
+resuming = "Resuming at {time}"
+added_n = "Added {n} songs to the queue"
+added_n_one = "Added 1 song to the queue"
+next_n = "{n} songs play next"
+next_n_one = "1 song plays next"
+loading = "Loading {name}…"
+starred = "Starred"
+unstarred = "Unstarred"
+rating_removed = "Rating removed"
+rated = "Rated {n} stars"
+rated_one = "Rated 1 star"
+pinning = "Downloading {n} songs for offline use…"
+pinning_one = "Downloading 1 song for offline use…"
+pinned_all = "All pinned songs are available offline"
+pinning_left = "{n} songs left to download"
+pinning_left_one = "1 song left to download"
+unpinned = "{name} is no longer kept offline"
+added_to_playlist = "Added {n} songs to {name}"
+added_to_playlist_one = "Added 1 song to {name}"
+bookmarked = "Bookmark saved at {time}"
+bookmark_deleted = "Bookmark deleted"
+scan_started = "Library scan started"
+playlist_created = "Created playlist {name}"
+queue_saved = "Saved the queue as {name}"
+playlist_deleted = "Playlist deleted"
+removed_from_playlist = "Removed from the playlist"
+server_queue_empty = "The server queue is empty"
+loaded_queue = "Loaded {n} songs from the server queue"
+loaded_queue_one = "Loaded 1 song from the server queue"
+cache_cleared = "Cache cleared"
+cache_usage = "Cache: {n} files, {mb} MB, {pinned} pinned songs"
+queue_ended = "End of the queue"
+similar = "Looking for songs similar to {name}…"
+replaygain = "ReplayGain: {mode}"
+bitrate_original = "Streaming the original files"
+bitrate = "Streaming at most {n} kbit/s"
+theme = "Theme: {name}"
+language = "Language changed"
+
+[error]
+load_server_queue = "Loading the server queue failed: {e}"
+nothing_to_play = "Nothing to play"
+nothing_playing = "Nothing is playing"
+star = "Starring failed: {e}"
+rate = "Rating failed: {e}"
+no_store = "There is no local cache (playback.cache_mb is 0)"
+update_playlist = "Updating {name} failed: {e}"
+bookmark = "Bookmark failed: {e}"
+one_profile = "There is only one server profile"
+unknown_profile = "Unknown profile {name}"
+create_playlist = "Creating {name} failed: {e}"
+years = "Not a year or range: {input}"
+save_playlist = "Saving {name} failed: {e}"
+delete = "Deleting failed: {e}"
+cache = "Cache: {e}"
+load_songs = "Loading songs failed: {e}"
+scan = "Scan failed: {e}"
+load_artists = "Loading artists failed: {e}"
+load = "Loading failed: {e}"
+load_playlists = "Loading playlists failed: {e}"
+load_playlist = "Loading the playlist failed: {e}"
+load_list = "Loading the list failed: {e}"
+remove = "Removing failed: {e}"
+remove_here = "Only bookmarks and pinned songs can be removed here"
+search = "Search failed: {e}"
+filter_move = "Clear the filter to move songs"
+queue_empty = "The queue is empty"
+unknown_command = "Unknown command: {cmd}"
+argument = "{cmd}: invalid argument “{arg}”"
+
+[prompt]
+new_playlist = "New playlist"
+save_queue = "Save queue as playlist"
+years = "Year or range (e.g. 1990-1999)"
+footer = "Enter ok · Esc cancel"
+
+[confirm]
+title = "Confirm"
+footer = "y yes · any other key no"
+overwrite_playlist = "Replace the songs of playlist “{name}” with the queue?"
+delete_playlist = "Delete playlist “{name}”?"
+load_server_queue = "Replace the queue with the one saved on the server?"
+clear_cache = "Delete all cached songs? Pinned songs stay."
+
+[picker]
+title = "Add {n} songs to"
+title_one = "Add 1 song to"
+new = "+ New playlist…"
+
+[player]
+nothing = "Nothing playing"
+offline = "offline"
+volume = "vol {n}%"
+repeat_all = "repeat all"
+repeat_one = "repeat one"
+
+[library]
+lists = "Lists"
+songs = "Songs"
+newest = "Recently added"
+recent = "Recently played"
+frequent = "Most played"
+random = "Random albums"
+starred_albums = "Starred albums"
+highest = "Top rated"
+by_name = "Albums A–Z"
+by_artist = "Albums by artist"
+years = "By year…"
+starred_songs = "Starred songs"
+bookmarks = "Bookmarks"
+pinned = "Offline (pinned)"
+empty = "Nothing here"
+no_pins = "No pinned songs. Press O on a song, album or playlist to keep it offline."
+no_bookmarks = "No bookmarks. Press b while a song plays to save the position."
+
+[browser]
+artists = "Artists"
+artists_tags = "Artists (tags)"
+no_artists = "No artists"
+empty = "Empty"
+hint = "Select an artist and press Enter"
+
+[playlists]
+none = "No playlists. Press n to create one."
+empty = "Empty playlist"
+
+[column]
+title = "Title"
+artist = "Artist"
+album = "Album"
+time = "Time"
+
+[search]
+hint = "Press e to search"
+artists = "Artists"
+albums = "Albums"
+songs = "Songs"
+
+[log]
+title = "Log (UTC)"
+empty = "Nothing logged yet"
+
+[queue]
+title = "Queue · {n} songs · {time}"
+title_one = "Queue · 1 song · {time}"
+empty = "The queue is empty. Add songs with a or Enter in the browser, or r for random songs."
+now_playing = "Now playing"
+starred = "starred"
+
+[lyrics]
+synced = "synced"
+nothing_playing = "Nothing is playing"
+none = "No lyrics for this song"
+
+[help]
+title = "Keys"
+footer = "j/k scroll · any other key closes"
+
+[palette]
+title = "Command"
+footer = "Enter run · Tab complete · Esc close"
+nothing = "No matching action. Enter runs the input as a command."
+
+[rate]
+title = "Rate {name}"
+text = "Press 1–5 for stars, 0 to remove the rating, any other key to cancel."
+
+[profile]
+title = "Server profile"

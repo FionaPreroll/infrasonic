@@ -13,7 +13,9 @@ use crate::app::{App, ConfirmAction, Enqueue, Msg, Overlay, PromptAction};
 use crate::entry::{Entry, fmt_time};
 use crate::keys::Action;
 use crate::list::{ListLike, ListView};
-use crate::ui::{self, Column, theme};
+use crate::t;
+use crate::theme;
+use crate::ui::{self, Column};
 
 const PREVIEW_DELAY: Duration = Duration::from_millis(150);
 
@@ -122,7 +124,7 @@ impl App {
                     self.playlists.entries.set_items(Vec::new());
                 }
             }
-            Err(e) => self.error(format!("Loading playlists failed: {e}")),
+            Err(e) => self.error(t!("error.load_playlists", e = e)),
         }
     }
 
@@ -154,7 +156,7 @@ impl App {
                     .set_items(songs.into_iter().map(Entry::from_child).collect());
                 self.playlists.entries.set_cursor(cursor);
             }
-            Err(e) => self.error(format!("Loading the playlist failed: {e}")),
+            Err(e) => self.error(t!("error.load_playlist", e = e)),
         }
     }
 
@@ -246,7 +248,7 @@ impl App {
             }
             Action::NewPlaylist => {
                 self.overlay = Some(Overlay::Prompt {
-                    title: "New playlist".into(),
+                    title: t!("prompt.new_playlist").into(),
                     input: String::new(),
                     action: PromptAction::NewPlaylist { songs: Vec::new() },
                 });
@@ -254,7 +256,7 @@ impl App {
             Action::DeletePlaylist if !p.focus_right => {
                 if let Some(sel) = p.lists.selected() {
                     self.overlay = Some(Overlay::Confirm {
-                        text: format!("Delete playlist “{}”?", sel.name),
+                        text: t!("confirm.delete_playlist", name = sel.name),
                         action: ConfirmAction::DeletePlaylist { id: sel.id.clone() },
                     });
                 }
@@ -270,8 +272,8 @@ impl App {
                         ..Default::default()
                     };
                     match s.client().update_playlist(&id, &u).await {
-                        Ok(()) => Msg::Info("Removed from the playlist".into()),
-                        Err(e) => Msg::Error(format!("Removing failed: {e}")),
+                        Ok(()) => Msg::Info(t!("status.removed_from_playlist").into()),
+                        Err(e) => Msg::Error(t!("error.remove", e = e)),
                     }
                 });
                 let shown = self.playlists.shown.clone();
@@ -281,6 +283,23 @@ impl App {
                 if let Some(e) = p.entries.selected() {
                     let (t, s) = (e.star_target(), e.starred());
                     self.toggle_star(t, s);
+                }
+            }
+            Action::Rate if p.focus_right => {
+                if let Some(e) = p.entries.selected() {
+                    let (id, name) = (e.id().to_string(), e.name().to_string());
+                    self.rate(id, name);
+                }
+            }
+            Action::Pin if p.focus_right => {
+                if let Some(e) = p.entries.selected().cloned() {
+                    self.pin_entry(e);
+                }
+            }
+            Action::Pin => {
+                let songs = p.songs();
+                if p.shown.as_deref() == p.lists.selected().map(|l| l.id.as_str()) {
+                    self.pin_songs(songs);
                 }
             }
             Action::Refresh => {
@@ -294,19 +313,28 @@ impl App {
 }
 
 pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
-    let [left, right] =
-        Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).areas(area);
     let p = &mut app.playlists;
+    let (left, right) = if area.width < 80 {
+        if p.focus_right {
+            (Rect::default(), area)
+        } else {
+            (area, Rect::default())
+        }
+    } else {
+        let [l, r] = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .areas(area);
+        (l, r)
+    };
     let loading = p.loading && !p.loaded;
     ui::draw_list(
         f,
         left,
         &mut p.lists,
         &Column {
-            title: "Playlists".into(),
+            title: t!("page.playlists").into(),
             focused: !p.focus_right,
             loading,
-            empty: "No playlists. Press n to create one.",
+            empty: t!("playlists.none"),
         },
         |pl| {
             let mut spans = vec![Span::raw(pl.name.clone())];
@@ -329,8 +357,14 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
                     .unwrap_or_default()
             )
         })
-        .unwrap_or_else(|| "Songs".into());
-    let header = Row::new(["Title", "Artist", "Album", "Time"]).style(theme::header());
+        .unwrap_or_else(|| t!("library.songs").into());
+    let header = Row::new([
+        t!("column.title"),
+        t!("column.artist"),
+        t!("column.album"),
+        t!("column.time"),
+    ])
+    .style(theme::header());
     let widths = [
         Constraint::Fill(3),
         Constraint::Fill(2),
@@ -347,13 +381,13 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
             title,
             focused,
             loading,
-            empty: "Empty playlist",
+            empty: t!("playlists.empty"),
         },
         header,
         &widths,
         |e| match e.song() {
             Some(c) => Row::new(vec![
-                Cell::from(ui::starred_title(&c.title, c.is_starred())),
+                Cell::from(ui::song_title(c)),
                 Cell::from(c.artist_name().to_string()),
                 Cell::from(c.album.clone().unwrap_or_default()),
                 Cell::from(

@@ -12,6 +12,7 @@ use crate::app::{App, Enqueue, Msg};
 use crate::entry::Entry;
 use crate::keys::Action;
 use crate::list::{ListLike, ListView};
+use crate::t;
 use crate::ui::{self, Column};
 
 /// Delay before the artist under the cursor is loaded.
@@ -138,7 +139,7 @@ impl App {
                     self.browser.artists.select_where(|e| e.id() == id);
                 }
             }
-            Err(e) => self.error(format!("Loading artists failed: {e}")),
+            Err(e) => self.error(t!("error.load_artists", e = e)),
         }
     }
 
@@ -182,7 +183,7 @@ impl App {
                     frame.list.select_where(|e| e.id() == k);
                 }
             }
-            Err(e) => self.error(format!("Loading failed: {e}")),
+            Err(e) => self.error(t!("error.load", e = e)),
         }
     }
 
@@ -287,6 +288,17 @@ impl App {
                     self.toggle_star(t, s);
                 }
             }
+            Action::Rate => {
+                if let Some(sel) = b.selected() {
+                    let (id, name) = (sel.id().to_string(), sel.name().to_string());
+                    self.rate(id, name);
+                }
+            }
+            Action::Pin => {
+                if let Some(sel) = b.selected().cloned() {
+                    self.pin_entry(sel);
+                }
+            }
             Action::AddToPlaylist => {
                 if let Some(sel) = b.selected().cloned() {
                     let s = self.session.clone();
@@ -303,7 +315,7 @@ impl App {
             Action::Similar => {
                 if let Some(sel) = b.selected().cloned() {
                     let s = self.session.clone();
-                    self.info(format!("Looking for songs similar to {}…", sel.name()));
+                    self.info(t!("status.similar", name = sel.name()));
                     self.spawn(async move {
                         let c = s.client();
                         let r = match &sel {
@@ -325,12 +337,22 @@ impl App {
 }
 
 pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
-    let [left, right] =
-        Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).areas(area);
     let b = &mut app.browser;
+    // Below 80 columns only the focused column is shown.
+    let (left, right) = if area.width < 80 {
+        if b.focus_right {
+            (Rect::default(), area)
+        } else {
+            (area, Rect::default())
+        }
+    } else {
+        let [l, r] = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .areas(area);
+        (l, r)
+    };
     let title = match b.mode {
-        BrowseMode::Folders => "Artists",
-        BrowseMode::Tags => "Artists (tags)",
+        BrowseMode::Folders => t!("browser.artists"),
+        BrowseMode::Tags => t!("browser.artists_tags"),
     };
     let loading = b.loading_root;
     ui::draw_list(
@@ -341,7 +363,7 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
             title: title.into(),
             focused: !b.focus_right,
             loading,
-            empty: "No artists",
+            empty: t!("browser.no_artists"),
         },
         |e| ui::entry_line(e, false),
     );
@@ -364,13 +386,13 @@ pub fn draw(app: &mut App, f: &mut Frame, area: Rect) {
                     title,
                     focused: focus_right,
                     loading,
-                    empty: "Empty",
+                    empty: t!("browser.empty"),
                 },
                 |e| ui::entry_line(e, true),
             );
         }
         None => {
-            let hint = Line::from("Select an artist and press Enter").centered();
+            let hint = Line::from(t!("browser.hint")).centered();
             ui::draw_placeholder(f, right, "", hint);
         }
     }

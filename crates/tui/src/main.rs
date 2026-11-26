@@ -2,6 +2,7 @@
 //! `infrasonic`: terminal music player for Subsonic servers.
 
 use std::io::stdout;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,13 +16,17 @@ use crossterm::terminal::{
 };
 use infrasonic::cli::Args;
 use infrasonic::cover::Cover;
+use infrasonic::keys::Keymap;
 use infrasonic::media::Media;
-use infrasonic::{app, logging, setup};
+use infrasonic::theme::{self, Theme};
+use infrasonic::{app, i18n, logging, setup};
+use infrasonic_core::cache::{AudioCache, server_key};
 use infrasonic_core::config::BrowseMode;
-use infrasonic_core::{Config, Paths, Profile, Session};
+use infrasonic_core::{Config, CoreError, Paths, Profile, Session, SessionEvent};
 use infrasonic_engine::output::{CpalOutputFactory, output_device_names};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 fn main() -> ExitCode {
     let args = Args::parse();
@@ -65,48 +70,117 @@ fn run(args: Args) -> anyhow::Result<()> {
     let log_file = args.log_file.clone().unwrap_or(paths.log_file.clone());
     let log = logging::init(Some(&log_file));
     tracing::info!("infrasonic {} starting", env!("CARGO_PKG_VERSION"));
+    i18n::set_language(i18n::Lang::from_setting(&config.ui.language));
+    let themes_dir = path.parent().map(|d| d.join("themes"));
+    let (theme, warnings) = Theme::load(&config.ui.theme, themes_dir.as_deref(), &config.ui.colors);
+    theme::apply(theme);
+    for w in warnings {
+        tracing::warn!("{w}");
+    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("infrasonic-rt")
         .build()?;
-    rt.block_on(play(name, profile, config, paths, log))
+    let ctx = Context {
+        config,
+        paths,
+        log,
+        themes_dir,
+        offline: args.offline,
+    };
+    rt.block_on(async {
+        let (mut name, mut profile) = (name, profile);
+        loop {
+            match play(&ctx, &name, &profile).await? {
+                Some(next) => {
+                    let Some(p) = ctx.config.profiles.get(&next) else {
+                        anyhow::bail!("unknown profile {next}");
+                    };
+                    profile = p.clone();
+                    name = next;
+                }
+                None => return Ok(()),
+            }
+        }
+    })
 }
 
-async fn play(
-    name: String,
-    profile: Profile,
+/// What stays the same across profile switches.
+struct Context {
     config: Config,
     paths: Paths,
     log: logging::LogBuffer,
-) -> anyhow::Result<()> {
-    eprintln!("Connecting to {}…", profile.url);
-    let output = Box::new(CpalOutputFactory {
-        device: config.playback.device.clone(),
-    });
-    let (session, events) = Session::connect(&name, &profile, config.playback.clone(), output)
-        .await
-        .with_context(|| format!("connecting to {}", profile.url))?;
-    let session = Arc::new(session);
+    themes_dir: Option<PathBuf>,
+    offline: bool,
+}
 
-    let mut terminal = init_terminal(config.ui.mouse)?;
-    let cover = Cover::new(config.ui.cover_art, Some(paths.cache_dir.join("covers")));
+/// Connect, or open the pinned songs if the server cannot be reached.
+async fn connect(
+    ctx: &Context,
+    name: &str,
+    profile: &Profile,
+) -> anyhow::Result<(Session, UnboundedReceiver<SessionEvent>)> {
+    let output = || {
+        Box::new(CpalOutputFactory {
+            device: ctx.config.playback.device.clone(),
+        })
+    };
+    let playback = ctx.config.playback.clone();
+    if ctx.offline {
+        return Ok(Session::offline(name, profile, playback, output())?);
+    }
+    eprintln!("Connecting to {}…", profile.url);
+    match Session::connect(name, profile, playback.clone(), output()).await {
+        Ok(s) => Ok(s),
+        Err(CoreError::Subsonic(e)) if matches!(e, infrasonic_subsonic::Error::Http(_)) => {
+            tracing::warn!("{} unreachable, starting offline: {e}", profile.url);
+            eprintln!("{} is unreachable ({e}), starting offline.", profile.url);
+            Ok(Session::offline(name, profile, playback, output())?)
+        }
+        Err(e) => Err(e).with_context(|| format!("connecting to {}", profile.url)),
+    }
+}
+
+/// Run one session. Returns the profile to switch to, if the user picked one.
+async fn play(ctx: &Context, name: &str, profile: &Profile) -> anyhow::Result<Option<String>> {
+    let (session, events) = connect(ctx, name, profile).await?;
+    let session = Arc::new(session);
+    if ctx.config.playback.cache_mb > 0 {
+        let cache = AudioCache::new(
+            &ctx.paths.cache_dir,
+            &ctx.paths.data_dir,
+            &server_key(&profile.url, &profile.username),
+            ctx.config.playback.cache_mb << 20,
+        );
+        session.set_cache(Some(Arc::new(cache)));
+    }
+
+    let mut terminal = init_terminal(ctx.config.ui.mouse)?;
+    let cover = Cover::new(
+        ctx.config.ui.cover_art,
+        Some(ctx.paths.cache_dir.join("covers")),
+    );
     let (mut app, msgs) = app::App::new(
         session.clone(),
-        config.ui.clone(),
-        config.playback.clone(),
-        log,
+        ctx.config.ui.clone(),
+        ctx.config.playback.clone(),
+        ctx.log.clone(),
         cover,
         None,
     );
+    app.set_keymap(Keymap::with_overrides(&ctx.config.keys));
+    app.profiles = ctx.config.profiles.keys().cloned().collect();
+    app.themes_dir = ctx.themes_dir.clone();
     match Media::new(app.sender()) {
         Ok(m) => app.set_media(m),
         Err(e) => tracing::info!("media controls unavailable: {e}"),
     }
     let result = app::run(&mut terminal, &mut app, msgs, events).await;
     restore_terminal();
+    let next = app.switch_to.take();
     drop(app);
 
-    if config.playback.save_queue_on_exit {
+    if ctx.config.playback.save_queue_on_exit && session.is_online() {
         eprintln!("Saving the queue on the server…");
     }
     match tokio::time::timeout(Duration::from_secs(5), session.finish()).await {
@@ -114,7 +188,7 @@ async fn play(
         Ok(Err(e)) => eprintln!("infrasonic: saving the queue failed: {e}"),
         Err(_) => eprintln!("infrasonic: saving the queue timed out"),
     }
-    result
+    result.map(|()| next)
 }
 
 fn init_terminal(mouse: bool) -> anyhow::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {

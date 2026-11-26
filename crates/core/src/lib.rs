@@ -26,6 +26,30 @@ pub enum CoreError {
     Subsonic(#[from] infrasonic_subsonic::Error),
 }
 
+/// The Subsonic view of an engine track (for APIs that take songs, e.g. pinning).
+pub fn child_from_track(t: &Track) -> Child {
+    Child {
+        id: t.id.clone(),
+        title: t.title.clone(),
+        artist: (!t.artist.is_empty()).then(|| t.artist.clone()),
+        album: (!t.album.is_empty()).then(|| t.album.clone()),
+        duration: t.duration.map(|d| d.round() as u32),
+        suffix: t.suffix.clone(),
+        content_type: t.content_type.clone(),
+        cover_art: t.cover_art.clone(),
+        track: t.track_number,
+        disc_number: t.disc_number,
+        year: t.year,
+        genre: t.genre.clone(),
+        bit_rate: t.bit_rate,
+        album_id: t.album_id.clone(),
+        artist_id: t.artist_id.clone(),
+        starred: t.starred.then(|| "1".to_string()),
+        user_rating: t.rating,
+        ..Child::default()
+    }
+}
+
 /// Convert a Subsonic song into an engine track.
 pub fn track_from_child(c: &Child) -> Track {
     Track {
@@ -48,6 +72,7 @@ pub fn track_from_child(c: &Child) -> Track {
         album_id: c.album_id.clone(),
         artist_id: c.artist_id.clone(),
         starred: c.is_starred(),
+        rating: c.user_rating.filter(|r| *r > 0),
         replay_gain: c.replay_gain.as_ref().and_then(|r| {
             let rg = infrasonic_engine::ReplayGain {
                 track_gain: r.track_gain.or(r.fallback_gain),

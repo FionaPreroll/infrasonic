@@ -235,16 +235,18 @@ impl Session {
     }
 
     /// Change ReplayGain settings.
-    pub fn set_replay_gain(&mut self, setting: crate::config::ReplayGainSetting) {
-        self.playback.replay_gain = setting;
-        self.send(Command::SetReplayGain(self.playback.replay_gain_config()));
+    pub fn set_replay_gain(&self, setting: crate::config::ReplayGainSetting) {
+        let mut p = self.playback.clone();
+        p.replay_gain = setting;
+        self.send(Command::SetReplayGain(p.replay_gain_config()));
     }
 
     /// Change streaming quality for tracks opened from now on.
-    pub fn set_max_bit_rate(&mut self, kbps: u32, format: Option<String>) {
-        self.playback.max_bit_rate = kbps;
-        self.playback.format = format;
-        self.provider.set_options(stream_options(&self.playback));
+    pub fn set_max_bit_rate(&self, kbps: u32, format: Option<String>) {
+        let mut p = self.playback.clone();
+        p.max_bit_rate = kbps;
+        p.format = format;
+        self.provider.set_options(stream_options(&p));
     }
 
     /// Replace the queue with `songs` and start playing at `start`.
