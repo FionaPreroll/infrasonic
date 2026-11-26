@@ -1,0 +1,26 @@
+[package]
+name = "infrasonic-headless"
+description = "Plays songs from a Subsonic server or local files without any UI (Android prototype)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+infrasonic-core.workspace = true
+infrasonic-engine = { workspace = true, features = ["cpal-output"] }
+infrasonic-subsonic.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tokio = { workspace = true }
+clap = { version = "4.6", features = ["derive", "env"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+infrasonic-e2e = { path = "../e2e" }
+
+[lints]
+workspace = true

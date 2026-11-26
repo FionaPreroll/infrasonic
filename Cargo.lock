@@ -1894,6 +1894,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "infrasonic-headless"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "infrasonic-core",
+ "infrasonic-e2e",
+ "infrasonic-engine",
+ "infrasonic-subsonic",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "infrasonic-subsonic"
 version = "0.1.0"
 dependencies = [

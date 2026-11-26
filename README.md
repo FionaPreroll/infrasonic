@@ -114,17 +114,33 @@ Debian and Ubuntu).
 |---|---|
 | `crates/subsonic` | Async Subsonic/OpenSubsonic client (API 1.16.1 and newer, token, password and API key auth). Also builds for WebAssembly. |
 | `crates/engine` | Playback engine: decoding with Symphonia and opus-decoder, rubato resampling, gapless queue, cpal output. Builds for WebAssembly and Android. |
-| `crates/core` | Configuration and profiles, HTTP streaming into the engine, scrobbling, queue sync. |
+| `crates/core` | Configuration and profiles, HTTP streaming into the engine, audio cache and pinning, scrobbling, queue sync. |
 | `crates/tui` | The `infrasonic` terminal player (ratatui). |
+| `crates/headless` | `infrasonic-headless`, a player without UI. The Android prototype: the engine plays on the device, started from `adb shell`. |
 | `crates/e2e` | End-to-end and soak tests against real servers. |
 | `crates/web-spike` | Proof that the engine's decoders run in the browser (groundwork for the web player). |
 | `vendor/opus-decoder` | opus-decoder 0.1.1 with a speed fix and an overflow fix, until they are released upstream. |
+
+## Android prototype
+
+The Android app comes later; for now `infrasonic-headless` shows that the engine plays on a phone
+(AAudio output, TLS with the system certificates). CI builds it for `aarch64-linux-android`
+(artifact `infrasonic-headless-aarch64-linux-android`, Android 8 or newer). With USB debugging on:
+
+```sh
+scripts/android-play.sh --bin ./infrasonic-headless --url https://me:secret@music.example.org --random 5
+scripts/android-play.sh --bin ./infrasonic-headless /sdcard/Music/song.flac
+```
+
+It prints a status line per second (position, underruns, ReplayGain) and stops at the end of
+the queue or after `--seconds N`. The same binary runs on desktops, and `--null` discards the
+audio.
 
 ## Development
 
 ```sh
 cargo test --workspace                           # unit and mock-server tests
-scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic --tests
+scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
                                                  # Navidrome and gonic in Docker, incl. headless TUI test
 INFRASONIC_SOAK_SECS=600 scripts/e2e-servers.sh cargo test --release -p infrasonic-e2e --test soak -- --nocapture
 scripts/fuzz.sh 60                               # all fuzz targets, needs nightly and cargo-fuzz
@@ -132,8 +148,8 @@ scripts/web-spike.sh [--serve]                   # engine in headless Chromium, 
 ```
 
 The test music in `testdata/music` is generated (see `testdata/README.md`). CI runs formatting,
-clippy, tests on Linux, macOS and Windows, the end-to-end tests, WebAssembly and Android build
-checks and `cargo deny`; fuzzing and a 30 minute soak run nightly.
+clippy, tests on Linux, macOS and Windows, the end-to-end tests, WebAssembly check, the Android
+build and `cargo deny`; fuzzing and a 30 minute soak run nightly.
 
 ## License
 

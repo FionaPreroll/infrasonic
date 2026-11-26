@@ -183,7 +183,40 @@ fn default_http_client() -> Result<reqwest::Client> {
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(60))
         .user_agent(concat!("infrasonic/", env!("CARGO_PKG_VERSION")));
+    #[cfg(target_os = "android")]
+    let b = android_roots(b);
     Ok(b.build()?)
+}
+
+/// The platform verifier needs a Java VM on Android, which a plain executable (run from
+/// `adb shell`) does not have. Use the system CA store from the file system instead.
+#[cfg(target_os = "android")]
+fn android_roots(b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    let mut certs = Vec::new();
+    for dir in [
+        "/apex/com.android.conscrypt/cacerts",
+        "/system/etc/security/cacerts",
+    ] {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            if let Ok(pem) = std::fs::read(e.path())
+                && let Ok(c) = reqwest::Certificate::from_pem(&pem)
+            {
+                certs.push(c);
+            }
+        }
+        if !certs.is_empty() {
+            break;
+        }
+    }
+    tracing::debug!("{} CA certificates from the system store", certs.len());
+    if certs.is_empty() {
+        b
+    } else {
+        b.tls_certs_only(certs)
+    }
 }
 
 #[derive(Debug)]

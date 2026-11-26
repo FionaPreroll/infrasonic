@@ -60,8 +60,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
-      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic --tests
-      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic --tests
+      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
+      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
 
   wasm:
     name: WebAssembly spike
@@ -85,13 +85,13 @@ jobs:
       - run: scripts/web-spike.sh
 
   android:
-    name: Android build check
+    name: Android build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - name: Check for aarch64-linux-android
+      - name: Build for aarch64-linux-android
         run: |
           TC="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           export CC_aarch64_linux_android="$TC/aarch64-linux-android26-clang"
@@ -99,6 +99,13 @@ jobs:
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
           cargo check --target aarch64-linux-android -p infrasonic-engine -p infrasonic-subsonic
           cargo check --target aarch64-linux-android -p infrasonic-core --no-default-features
+          cargo build --release --target aarch64-linux-android -p infrasonic-headless
+          file target/aarch64-linux-android/release/infrasonic-headless
+      - uses: actions/upload-artifact@v4
+        with:
+          name: infrasonic-headless-aarch64-linux-android
+          path: target/aarch64-linux-android/release/infrasonic-headless
+          retention-days: 14
 
   deny:
     name: Licenses and advisories
