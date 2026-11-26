@@ -271,6 +271,8 @@ fn transport_commands() {
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Paused)
     });
+    // The snapshot may still trail the output by one loop turn (Windows timers are coarse).
+    std::thread::sleep(Duration::from_millis(100));
     let p1 = e.snapshot().position;
     std::thread::sleep(Duration::from_millis(200));
     assert!(
@@ -363,9 +365,14 @@ fn repeat_one_and_queue_edits() {
         std::thread::sleep(Duration::from_millis(10));
         s = e.snapshot();
     }
-    assert_eq!(s.queue.len(), 2);
-    assert_eq!(s.current_index, Some(0));
-    assert!(s.current.is_some_and(|c| c.track.title.contains("High A")));
+    assert_eq!(s.queue.len(), 2, "{s:?}");
+    assert_eq!(s.current_index, Some(0), "{s:?}");
+    assert!(
+        s.current
+            .as_ref()
+            .is_some_and(|c| c.track.title.contains("High A")),
+        "{s:?}"
+    );
     e.send(Command::Clear);
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Stopped)
