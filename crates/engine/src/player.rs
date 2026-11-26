@@ -632,8 +632,9 @@ impl Worker {
                 match l.result {
                     Ok(dec) => {
                         self.failures_in_row = 0;
-                        if self.duration.is_none() {
-                            self.duration = dec.duration();
+                        // The decoder knows the exact length; servers round to seconds.
+                        if let Some(d) = dec.duration() {
+                            self.duration = Some(d);
                         }
                         self.activate(l.uid, dec, l.start);
                         let s = if self.want_pause {
@@ -704,12 +705,12 @@ impl Worker {
     }
 
     fn activate(&mut self, uid: u64, dec: TrackDecoder, offset: f64) {
-        let duration = self
-            .queue
-            .index_of(uid)
-            .and_then(|i| self.queue.get(i))
-            .and_then(|e| e.track.duration)
-            .or(dec.duration());
+        let duration = dec.duration().or_else(|| {
+            self.queue
+                .index_of(uid)
+                .and_then(|i| self.queue.get(i))
+                .and_then(|e| e.track.duration)
+        });
         self.segments.push_back(Segment {
             start_frame: self.frames_written,
             uid,
@@ -1005,8 +1006,12 @@ impl Worker {
 
     fn emit_position(&mut self) {
         self.last_position_event = Instant::now();
+        let position = match self.duration {
+            Some(d) => self.position.min(d),
+            None => self.position,
+        };
         self.emit(Event::Position {
-            position: self.position,
+            position,
             duration: self.duration,
         });
     }
@@ -1016,7 +1021,7 @@ impl Worker {
         s.state = self.state;
         s.current_index = self.queue.current_index();
         s.current = self.queue.current().cloned();
-        s.position = self.position;
+        s.position = self.duration.map_or(self.position, |d| self.position.min(d));
         s.duration = self.duration;
         s.volume = self.volume;
         s.repeat = self.queue.repeat();

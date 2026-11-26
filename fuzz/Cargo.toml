@@ -1,0 +1,62 @@
+[package]
+name = "infrasonic-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+infrasonic-subsonic = { path = "../crates/subsonic" }
+infrasonic-engine = { path = "../crates/engine", default-features = false }
+infrasonic-core = { path = "../crates/core", default-features = false }
+
+# Not part of the main workspace: cargo-fuzz needs nightly and sanitizer flags.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+# See the comment in the main Cargo.toml.
+[profile.release.package.opus-decoder]
+overflow-checks = false
+
+[[bin]]
+name = "subsonic_response"
+path = "fuzz_targets/subsonic_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "queue"
+path = "fuzz_targets/queue.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_reader"
+path = "fuzz_targets/stream_reader.rs"
+test = false
+doc = false
+bench = false
