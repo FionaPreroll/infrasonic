@@ -199,8 +199,10 @@ pub struct Artists {
 pub struct Album {
     #[serde(deserialize_with = "id")]
     pub id: Id,
-    #[serde(default, alias = "title")]
+    #[serde(default)]
     pub name: String,
+    /// Some servers send `title` in addition to (or instead of) `name`.
+    pub title: Option<String>,
     pub artist: Option<String>,
     #[serde(default, deserialize_with = "opt_id")]
     pub artist_id: Option<Id>,
@@ -216,6 +218,17 @@ pub struct Album {
     pub user_rating: Option<u8>,
     #[serde(default)]
     pub song: Vec<Child>,
+}
+
+impl Album {
+    /// The album name, falling back to `title`.
+    pub fn display_name(&self) -> &str {
+        if self.name.is_empty() {
+            self.title.as_deref().unwrap_or("")
+        } else {
+            &self.name
+        }
+    }
 }
 
 /// Result of `search3`.

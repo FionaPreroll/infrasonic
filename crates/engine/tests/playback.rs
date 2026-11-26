@@ -66,7 +66,12 @@ fn decodes_all_formats() {
     let cases = [
         (format!("{SINE}/01 - Low A.flac"), 220.0, 4.0, 44_100),
         (format!("{FORMATS}/01 - MP3 Song.mp3"), 330.0, 5.0, 44_100),
-        (format!("{FORMATS}/02 - Vorbis Song.ogg"), 350.0, 5.0, 44_100),
+        (
+            format!("{FORMATS}/02 - Vorbis Song.ogg"),
+            350.0,
+            5.0,
+            44_100,
+        ),
         (format!("{FORMATS}/03 - Opus Song.opus"), 370.0, 5.0, 48_000),
         (format!("{FORMATS}/04 - AAC Song.m4a"), 390.0, 5.0, 44_100),
     ];
@@ -82,7 +87,10 @@ fn decodes_all_formats() {
             "{path}: {got_secs:.3}s instead of {secs}s"
         );
         let f = frequency(&d.left, d.rate);
-        assert!((f - freq).abs() < 3.0, "{path}: {f:.1} Hz instead of {freq} Hz");
+        assert!(
+            (f - freq).abs() < 3.0,
+            "{path}: {f:.1} Hz instead of {freq} Hz"
+        );
         let peak = d.left.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.03 && peak <= 1.0, "{path}: peak {peak}");
     }
@@ -100,12 +108,19 @@ fn seek_is_sample_accurate_for_flac() {
 
 #[test]
 fn seek_works_for_lossy_formats() {
-    for name in ["01 - MP3 Song.mp3", "02 - Vorbis Song.ogg", "03 - Opus Song.opus"] {
+    for name in [
+        "01 - MP3 Song.mp3",
+        "02 - Vorbis Song.ogg",
+        "03 - Opus Song.opus",
+    ] {
         let mut dec = open(&file(&format!("{FORMATS}/{name}")));
         dec.seek(3.0).expect("seek");
         let d = decode_all(&mut dec);
         let remaining = d.left.len() as f64 / f64::from(d.rate);
-        assert!((remaining - 2.0).abs() < 0.1, "{name}: remaining {remaining}");
+        assert!(
+            (remaining - 2.0).abs() < 0.1,
+            "{name}: remaining {remaining}"
+        );
     }
 }
 
@@ -151,7 +166,11 @@ fn engine(speed: f64, capture: Option<Arc<Mutex<Vec<f32>>>>) -> Engine {
     Engine::new(EngineConfig::default(), file_provider(), Box::new(out))
 }
 
-fn wait_for(engine: &Engine, timeout: Duration, mut pred: impl FnMut(&Event) -> bool) -> Vec<Event> {
+fn wait_for(
+    engine: &Engine,
+    timeout: Duration,
+    mut pred: impl FnMut(&Event) -> bool,
+) -> Vec<Event> {
     let deadline = Instant::now() + timeout;
     let mut seen = Vec::new();
     while Instant::now() < deadline {
@@ -194,7 +213,10 @@ fn plays_album_gaplessly() {
         .collect();
     assert_eq!(
         changes,
-        sine_album().iter().map(|t| t.title.clone()).collect::<Vec<_>>()
+        sine_album()
+            .iter()
+            .map(|t| t.title.clone())
+            .collect::<Vec<_>>()
     );
     assert!(events.contains(&Event::StateChanged(PlayState::Playing)));
     assert_eq!(e.snapshot().state, PlayState::Stopped);
@@ -233,7 +255,11 @@ fn transport_commands() {
     std::thread::sleep(Duration::from_millis(300));
     let s = e.snapshot();
     assert_eq!(s.current_index, Some(1));
-    assert!(s.position > 0.1 && s.position < 1.5, "position {}", s.position);
+    assert!(
+        s.position > 0.1 && s.position < 1.5,
+        "position {}",
+        s.position
+    );
     assert_eq!(s.volume, 50);
 
     e.send(Command::Pause);
@@ -242,12 +268,17 @@ fn transport_commands() {
     });
     let p1 = e.snapshot().position;
     std::thread::sleep(Duration::from_millis(200));
-    assert!((e.snapshot().position - p1).abs() < 0.02, "position moved while paused");
+    assert!(
+        (e.snapshot().position - p1).abs() < 0.02,
+        "position moved while paused"
+    );
 
     e.send(Command::Seek(3.0));
-    wait_for(&e, Duration::from_secs(2), |ev| {
-        matches!(ev, Event::Position { position, .. } if (*position - 3.0).abs() < 0.05)
-    });
+    wait_for(
+        &e,
+        Duration::from_secs(2),
+        |ev| matches!(ev, Event::Position { position, .. } if (*position - 3.0).abs() < 0.05),
+    );
     // Seek keeps the pause state.
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Paused)
@@ -258,13 +289,17 @@ fn transport_commands() {
     });
 
     e.send(Command::Next);
-    wait_for(&e, Duration::from_secs(3), |ev| {
-        matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A"))
-    });
+    wait_for(
+        &e,
+        Duration::from_secs(3),
+        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A")),
+    );
     e.send(Command::Previous);
-    wait_for(&e, Duration::from_secs(3), |ev| {
-        matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Middle A"))
-    });
+    wait_for(
+        &e,
+        Duration::from_secs(3),
+        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Middle A")),
+    );
     e.send(Command::Stop);
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Stopped)
@@ -285,9 +320,11 @@ fn broken_track_is_skipped() {
     });
     let events = wait_for(&e, Duration::from_secs(10), |ev| *ev == Event::QueueEnded);
     assert!(events.iter().any(|ev| matches!(ev, Event::Error(_))));
-    assert!(events.iter().any(
-        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Low A"))
-    ));
+    assert!(
+        events.iter().any(
+            |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Low A"))
+        )
+    );
 }
 
 #[test]
@@ -301,13 +338,17 @@ fn repeat_one_and_queue_edits() {
         play: true,
     });
     // High A ends and starts again.
-    let ev = wait_for(&e, Duration::from_secs(5), |ev| {
-        matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A"))
-    });
+    let ev = wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A")),
+    );
     assert!(!ev.is_empty());
-    wait_for(&e, Duration::from_secs(5), |ev| {
-        matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A"))
-    });
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("High A")),
+    );
     e.send(Command::SetRepeat(RepeatMode::Off));
     e.send(Command::Move { from: 2, to: 0 });
     e.send(Command::Remove(1));
@@ -335,8 +376,12 @@ fn appending_after_queue_end_continues() {
     wait_for(&e, Duration::from_secs(5), |ev| {
         *ev == Event::StateChanged(PlayState::Playing)
     });
-    e.send(Command::Append(vec![track(&format!("{SINE}/02 - Middle A.flac"))]));
-    wait_for(&e, Duration::from_secs(5), |ev| {
-        matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Middle A"))
-    });
+    e.send(Command::Append(vec![track(&format!(
+        "{SINE}/02 - Middle A.flac"
+    ))]));
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Middle A")),
+    );
 }

@@ -1,0 +1,21 @@
+[package]
+name = "infrasonic-e2e"
+description = "End-to-end and soak tests against real Subsonic servers (see scripts/e2e-servers.sh)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+infrasonic-core.workspace = true
+infrasonic-engine = { workspace = true, default-features = false }
+infrasonic-subsonic.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+
+[lints]
+workspace = true

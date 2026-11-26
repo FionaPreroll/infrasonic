@@ -74,6 +74,12 @@ impl StreamWriter {
         true
     }
 
+    /// Set the total length once it is known (e.g. from `Content-Length`).
+    pub fn set_len(&self, len: u64) {
+        self.shared.state.lock().total = Some(len);
+        self.shared.cond.notify_all();
+    }
+
     /// Whether the reader side has been dropped.
     pub fn is_cancelled(&self) -> bool {
         self.shared.state.lock().cancelled
@@ -183,11 +189,7 @@ impl Read for StreamReader {
                     None => Ok(0),
                 };
             }
-            if self
-                .shared
-                .cond
-                .wait_for(&mut st, self.timeout)
-                .timed_out()
+            if self.shared.cond.wait_for(&mut st, self.timeout).timed_out()
                 && st.data.len() as u64 <= self.pos
                 && !st.done
             {
@@ -208,12 +210,7 @@ impl Seek for StreamReader {
             SeekFrom::End(d) => {
                 let mut st = self.shared.state.lock();
                 while st.total.is_none() && !st.done {
-                    if self
-                        .shared
-                        .cond
-                        .wait_for(&mut st, self.timeout)
-                        .timed_out()
-                    {
+                    if self.shared.cond.wait_for(&mut st, self.timeout).timed_out() {
                         return Err(io::Error::new(
                             io::ErrorKind::TimedOut,
                             "stream length unknown",

@@ -275,7 +275,8 @@ pub fn parse_response<T: DeserializeOwned + Default>(
             }
         }
     }
-    if path.is_empty() {
+    if path.is_empty() || (cur.is_null() && !required) {
+        // gonic sends `null` for empty lists.
         return Ok((info, T::default()));
     }
     let value = serde_json::from_value(cur).map_err(decode)?;
@@ -372,7 +373,11 @@ impl Client {
             form.extend(params.iter().map(|(k, v)| (*k, v.clone())));
             self.inner.http.post(url).form(&form).send().await?
         } else {
-            self.inner.http.get(self.url(endpoint, params)).send().await?
+            self.inner
+                .http
+                .get(self.url(endpoint, params))
+                .send()
+                .await?
         };
         let resp = resp.error_for_status()?;
         Ok(resp.bytes().await?.to_vec())
@@ -403,7 +408,12 @@ impl Client {
     /// `getOpenSubsonicExtensions`. Returns an empty list on plain Subsonic servers.
     pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<Extension>> {
         match self
-            .call("getOpenSubsonicExtensions", &[], &["openSubsonicExtensions"], false)
+            .call(
+                "getOpenSubsonicExtensions",
+                &[],
+                &["openSubsonicExtensions"],
+                false,
+            )
             .await
         {
             Ok(v) => Ok(v),
@@ -437,8 +447,13 @@ impl Client {
 
     /// `getMusicDirectory`.
     pub async fn get_music_directory(&self, id: &str) -> Result<Directory> {
-        self.call("getMusicDirectory", &[("id", id.into())], &["directory"], true)
-            .await
+        self.call(
+            "getMusicDirectory",
+            &[("id", id.into())],
+            &["directory"],
+            true,
+        )
+        .await
     }
 
     /// `getArtists`: the ID3 based artist index.
@@ -460,7 +475,8 @@ impl Client {
 
     /// `getSong`.
     pub async fn get_song(&self, id: &str) -> Result<Child> {
-        self.call("getSong", &[("id", id.into())], &["song"], true).await
+        self.call("getSong", &[("id", id.into())], &["song"], true)
+            .await
     }
 
     /// `search3`.
@@ -518,7 +534,12 @@ impl Client {
         if let Some(pb) = update.public {
             p.push(("public", pb.to_string()));
         }
-        p.extend(update.add_song_ids.iter().map(|s| ("songIdToAdd", s.clone())));
+        p.extend(
+            update
+                .add_song_ids
+                .iter()
+                .map(|s| ("songIdToAdd", s.clone())),
+        );
         p.extend(
             update
                 .remove_indexes
@@ -655,7 +676,8 @@ impl Client {
 
     /// `getScanStatus`.
     pub async fn get_scan_status(&self) -> Result<ScanStatus> {
-        self.call("getScanStatus", &[], &["scanStatus"], false).await
+        self.call("getScanStatus", &[], &["scanStatus"], false)
+            .await
     }
 
     /// `getAlbumList2`.
@@ -680,7 +702,8 @@ impl Client {
 
     /// `getGenres`.
     pub async fn get_genres(&self) -> Result<Vec<Genre>> {
-        self.call("getGenres", &[], &["genres", "genre"], false).await
+        self.call("getGenres", &[], &["genres", "genre"], false)
+            .await
     }
 
     /// `getSongsByGenre`.
@@ -782,7 +805,10 @@ mod tests {
         .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(c.base_url().as_str(), "https://music.example.com/sub/");
         let u = c.stream_url("42", &StreamOptions::default());
-        assert!(u.as_str().starts_with("https://music.example.com/sub/rest/stream?"));
+        assert!(
+            u.as_str()
+                .starts_with("https://music.example.com/sub/rest/stream?")
+        );
         assert!(u.query_pairs().any(|(k, v)| k == "apiKey" && v == "k"));
         assert!(u.query_pairs().any(|(k, v)| k == "id" && v == "42"));
     }
@@ -812,6 +838,19 @@ mod tests {
         assert_eq!(d.id, "12");
         assert_eq!(d.child[0].parent.as_deref(), Some("12"));
         assert_eq!(d.child[0].cover_art.as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn parse_null_list_is_empty() {
+        let body = br#"{"subsonic-response":{"status":"ok","version":"1.16.1","lyricsList":{"structuredLyrics":null}}}"#;
+        let (_, v): (_, Vec<StructuredLyrics>) = parse_response(
+            "getLyricsBySongId",
+            body,
+            &["lyricsList", "structuredLyrics"],
+            false,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(v.is_empty());
     }
 
     #[test]

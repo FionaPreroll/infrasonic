@@ -232,7 +232,8 @@ impl TrackDecoder {
             if self.skip_frames > 0 {
                 let frames = (self.buf.len() / self.channels) as u64;
                 let skip = self.skip_frames.min(frames);
-                self.buf.drain(..usize::try_from(skip).unwrap_or(0) * self.channels);
+                self.buf
+                    .drain(..usize::try_from(skip).unwrap_or(0) * self.channels);
                 self.skip_frames -= skip;
             }
             if self.buf.is_empty() {

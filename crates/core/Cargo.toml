@@ -1,6 +1,39 @@
 [package]
-name="infrasonic-core"
-version.workspace=true
-edition.workspace=true
-license.workspace=true
+name = "infrasonic-core"
+description = "Application logic shared by all infrasonic frontends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["keyring"]
+## Read passwords from the system keychain (Secret Service, macOS Keychain, Windows).
+keyring = ["dep:keyring"]
+
 [dependencies]
+infrasonic-subsonic.workspace = true
+infrasonic-engine.workspace = true
+serde.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+url.workspace = true
+etcetera = "0.11"
+keyring = { version = "4.2", optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true
+proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

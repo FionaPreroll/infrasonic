@@ -28,7 +28,10 @@ pub enum Command {
     Append(Vec<Track>),
     InsertNext(Vec<Track>),
     Remove(usize),
-    Move { from: usize, to: usize },
+    Move {
+        from: usize,
+        to: usize,
+    },
     Clear,
     /// Shuffle the queue; the current track moves to the front.
     Shuffle,
@@ -732,14 +735,24 @@ impl Worker {
         let Some(next) = self.expected_next_uid() else {
             return;
         };
-        if let Some(e) = self.queue.index_of(next).and_then(|i| self.queue.get(i)).cloned() {
+        if let Some(e) = self
+            .queue
+            .index_of(next)
+            .and_then(|i| self.queue.get(i))
+            .cloned()
+        {
             self.preloading = Some(next);
             self.spawn_open(e, Purpose::Next, 0.0);
         }
     }
 
     fn start_load_next(&mut self, uid: u64) {
-        if let Some(e) = self.queue.index_of(uid).and_then(|i| self.queue.get(i)).cloned() {
+        if let Some(e) = self
+            .queue
+            .index_of(uid)
+            .and_then(|i| self.queue.get(i))
+            .cloned()
+        {
             self.waiting_next = Some(uid);
             self.spawn_open(e, Purpose::Next, 0.0);
         }
@@ -819,7 +832,11 @@ impl Worker {
         match dec {
             Some(d) => self.spawn_seek(uid, d, to),
             None => {
-                if let Some(e) = self.queue.index_of(uid).and_then(|i| self.queue.get(i)).cloned()
+                if let Some(e) = self
+                    .queue
+                    .index_of(uid)
+                    .and_then(|i| self.queue.get(i))
+                    .cloned()
                 {
                     self.spawn_open(e, Purpose::Play, to);
                 }
@@ -856,7 +873,9 @@ impl Worker {
                     return;
                 }
                 if let Ok(chunk) = producer.write_chunk_uninit(n) {
-                    chunk.fill_from_iter(a.pending[a.pending_pos..a.pending_pos + n].iter().copied());
+                    chunk.fill_from_iter(
+                        a.pending[a.pending_pos..a.pending_pos + n].iter().copied(),
+                    );
                 }
                 a.pending_pos += n;
                 self.frames_written += (n / ch) as u64;

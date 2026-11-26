@@ -81,9 +81,14 @@ async fn http_errors_are_reported() {
 #[tokio::test]
 async fn long_parameter_lists_use_form_post() {
     let server = MockServer::start().await;
-    Mock::given(path("/rest/ping")).respond_with(ok("")).mount(&server).await;
+    Mock::given(path("/rest/ping"))
+        .respond_with(ok(""))
+        .mount(&server)
+        .await;
     Mock::given(path("/rest/getOpenSubsonicExtensions"))
-        .respond_with(ok(r#","openSubsonicExtensions":[{"name":"formPost","versions":[1]}]"#))
+        .respond_with(ok(
+            r#","openSubsonicExtensions":[{"name":"formPost","versions":[1]}]"#,
+        ))
         .mount(&server)
         .await;
     Mock::given(method("POST"))

@@ -58,3 +58,8 @@ strip = true
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# opus-decoder 0.1.1 shifts a u8 by up to 15 bits in `extract_collapse_mask`; release builds
+# wrap, debug builds would panic. Keep debug and release behaviour identical.
+[profile.dev.package.opus-decoder]
+overflow-checks = false

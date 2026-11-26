@@ -80,7 +80,10 @@ mod tests {
     #[test]
     fn token_matches_api_example() {
         // Example from http://www.subsonic.org/pages/api.jsp
-        assert_eq!(token("sesame", "c19b2d"), "26719a1196d2a940705a59634eb18eab");
+        assert_eq!(
+            token("sesame", "c19b2d"),
+            "26719a1196d2a940705a59634eb18eab"
+        );
     }
 
     #[test]

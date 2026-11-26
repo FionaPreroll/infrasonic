@@ -89,7 +89,12 @@ impl OutputShared {
 }
 
 /// Fill `out` from the ring buffer. Called from the backend's audio callback.
-pub fn render(consumer: &mut Consumer<f32>, shared: &OutputShared, out: &mut [f32], channels: usize) {
+pub fn render(
+    consumer: &mut Consumer<f32>,
+    shared: &OutputShared,
+    out: &mut [f32],
+    channels: usize,
+) {
     if shared.flush.load(Ordering::Acquire) {
         let n = consumer.slots();
         if let Ok(chunk) = consumer.read_chunk(n) {
@@ -209,9 +214,9 @@ impl OutputFactory for NullOutputFactory {
         let thread = std::thread::Builder::new()
             .name("infrasonic-null-output".into())
             .spawn(move || {
-                let frames_per_tick =
-                    ((f64::from(spec.sample_rate) * tick.as_secs_f64() * speed).ceil() as usize)
-                        .max(1);
+                let frames_per_tick = ((f64::from(spec.sample_rate) * tick.as_secs_f64() * speed)
+                    .ceil() as usize)
+                    .max(1);
                 let mut buf = vec![0.0f32; frames_per_tick * spec.channels];
                 while !stop2.load(Ordering::Acquire) {
                     let before = shared.played_frames();
@@ -314,7 +319,8 @@ mod cpal_backend {
             shared: Arc<OutputShared>,
             buffer: Duration,
         ) -> Result<(Box<dyn AudioOutput>, Producer<f32>), Error> {
-            let (tx, rx) = crossbeam_channel::bounded::<Result<(OutputSpec, Producer<f32>), Error>>(1);
+            let (tx, rx) =
+                crossbeam_channel::bounded::<Result<(OutputSpec, Producer<f32>), Error>>(1);
             let (stop_tx, stop_rx) = crossbeam_channel::bounded::<()>(1);
             let wanted = self.device.clone();
             // cpal streams are not `Send` on every platform, so a dedicated thread owns it.
@@ -378,7 +384,13 @@ mod cpal_backend {
             let (spec, producer) = rx
                 .recv_timeout(Duration::from_secs(10))
                 .map_err(|_| Error::Output("audio device did not respond".into()))??;
-            Ok((Box::new(CpalOutput { spec, stop: stop_tx }), producer))
+            Ok((
+                Box::new(CpalOutput {
+                    spec,
+                    stop: stop_tx,
+                }),
+                producer,
+            ))
         }
     }
 }
