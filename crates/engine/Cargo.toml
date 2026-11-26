@@ -1,0 +1,38 @@
+[package]
+name = "infrasonic-engine"
+description = "Playback engine for infrasonic: streaming source, decoding, resampling and audio output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["cpal-output"]
+## Audio output via cpal (CoreAudio, ALSA, WASAPI, AAudio, WebAudio).
+cpal-output = ["dep:cpal"]
+
+[dependencies]
+symphonia = { workspace = true, features = ["mp3", "flac", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "pcm", "aiff", "mkv", "adpcm"] }
+opus-decoder.workspace = true
+rubato.workspace = true
+audioadapter-buffers = "5"
+rtrb.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rand.workspace = true
+cpal = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+hound = "3.5"
+parking_lot.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }

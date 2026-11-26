@@ -1,0 +1,34 @@
+[package]
+name = "infrasonic-subsonic"
+description = "Typed async client for the Subsonic and OpenSubsonic API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+md-5.workspace = true
+hex.workspace = true
+rand.workspace = true
+tracing.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rustls.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
