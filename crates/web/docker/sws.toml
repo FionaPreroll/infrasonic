@@ -20,6 +20,9 @@ source = "**/*"
 Cache-Control = "no-cache"
 X-Content-Type-Options = "nosniff"
 Referrer-Policy = "no-referrer"
+# No other site may show the player in a frame (clickjacking on the saved logins).
+X-Frame-Options = "DENY"
+Content-Security-Policy = "frame-ancestors 'none'"
 # Isolation from other sites' windows; "credentialless" keeps covers and streams from the
 # music server working (they come without cookies anyway).
 Cross-Origin-Opener-Policy = "same-origin"

@@ -320,12 +320,21 @@ impl Config {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(err)?;
         }
-        std::fs::write(path, self.to_toml()).map_err(err)?;
+        // Private before the credentials go in: a new file is created as 0600, an existing one
+        // (e.g. a symlink into dotfiles, which stays one) is restricted first.
+        let mut open = std::fs::OpenOptions::new();
+        open.write(true).create(true).truncate(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(err)?;
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            open.mode(0o600);
+            if path.exists() {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                    .map_err(err)?;
+            }
         }
+        let mut f = open.open(path).map_err(err)?;
+        std::io::Write::write_all(&mut f, self.to_toml().as_bytes()).map_err(err)?;
         Ok(())
     }
 
@@ -674,5 +683,10 @@ spinner = '|/-\'
         let mode = std::fs::metadata(&path).expect("meta").permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         assert_eq!(Config::load(&path).expect("load"), Config::default());
+        // An older file that others could read becomes private too.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        Config::default().save(&path).expect("save again");
+        let mode = std::fs::metadata(&path).expect("meta").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 }
