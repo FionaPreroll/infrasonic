@@ -82,6 +82,9 @@ button.link:hover { color: var(--accent); background: none; }
 }
 .icon-btn:hover:not(:disabled) { color: var(--text); background: var(--hover); }
 .icon-btn.on, .star.on { color: var(--accent); }
+.ic { width: 1.15em; height: 1.15em; flex: none; display: block; }
+button:has(> .ic) { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
+.star.on .ic, .star-btn.on .ic, .play .ic, .play-over .ic { fill: currentColor; }
 input:not([type="checkbox"]):not([type="range"]), select {
   border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
   padding: .45rem .6rem; min-width: 0;
@@ -108,7 +111,8 @@ input[type="range"] { accent-color: var(--accent); }
 .sidebar a { display: flex; gap: .7rem; padding: .45rem .6rem; border-radius: 8px; }
 .sidebar a:hover { background: var(--hover); color: inherit; }
 .sidebar a.active { background: var(--hover); color: var(--accent); font-weight: 600; }
-.sidebar .icon { width: 1.2rem; text-align: center; }
+.sidebar a { align-items: center; }
+.sidebar .ic { width: 1.2rem; height: 1.2rem; }
 main { grid-area: main; overflow-y: auto; padding: 1.4rem 2rem 2rem; }
 
 /* player bar */
@@ -134,11 +138,13 @@ main { grid-area: main; overflow-y: auto; padding: 1.4rem 2rem 2rem; }
 .player .seek input { flex: 1; }
 .player .time { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3em; text-align: center; }
 .player .extra { display: flex; justify-content: flex-end; align-items: center; gap: .3rem; }
+.player .vol { display: flex; align-items: center; gap: .2rem; }
 .player .volume { width: 110px; }
 .nocover, .card .cover.nocover {
   display: flex; align-items: center; justify-content: center; background: var(--hover);
-  color: var(--muted); font-size: 1.6rem;
+  color: var(--muted);
 }
+.nocover .ic { width: 40%; height: 40%; stroke-width: 1.5; }
 
 /* album and artist grids */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1.2rem; }
@@ -271,7 +277,7 @@ table.songs { width: 100%; border-collapse: collapse; }
     gap: .2rem .6rem; padding: .4rem .7rem;
   }
   .player .controls { grid-column: 1 / -1; grid-row: 2; flex-direction: row-reverse; }
-  .player .extra .volume, .player .extra > .icon { display: none; }
+  .player .extra .vol { display: none; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .9rem; }
   .head .big { width: 150px; height: 150px; }
   .songs .rating, .songs .num { display: none; }

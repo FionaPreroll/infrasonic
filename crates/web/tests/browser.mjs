@@ -56,7 +56,7 @@ async function waitPlaying(page, beyond = 1, timeout = 30000) {
   await waitPlayingInner(page, beyond, timeout).catch(async (e) => {
     const state = await page.evaluate(() => ({
       position: document.querySelector("#position")?.textContent,
-      button: document.querySelector("#play")?.textContent,
+      button: document.querySelector("#play svg")?.dataset.icon,
       title: document.querySelector(".player .title")?.textContent,
       toast: document.querySelector(".toast")?.textContent,
     }));
@@ -69,7 +69,7 @@ async function waitPlayingInner(page, beyond, timeout) {
     (s) => {
       const t = document.querySelector("#position")?.textContent || "0:00";
       const secs = t.split(":").reduce((a, x) => a * 60 + Number(x), 0);
-      return secs >= s && document.querySelector("#play")?.textContent.includes("⏸");
+      return secs >= s && document.querySelector("#play svg")?.dataset.icon === "Pause";
     },
     beyond,
     { timeout },
@@ -138,13 +138,26 @@ for (const [name, server] of servers) {
 
   await step("pause, resume and seek", async () => {
     await page.keyboard.press("Space");
-    await page.waitForFunction(() => document.querySelector("#play").textContent.includes("▶"));
+    await page.waitForFunction(() => document.querySelector("#play svg")?.dataset.icon === "Play");
     const p0 = await position(page);
     await page.waitForTimeout(1200);
     if ((await position(page)) !== p0) throw new Error("position moved while paused");
     await page.keyboard.press("Space");
     await waitPlaying(page, p0);
   });
+
+  if (!mobile) {
+    await step("mouse wheel over the volume slider", async () => {
+      const vol = () => page.$eval(".player .vol input", (e) => Number(e.value));
+      const v0 = await vol();
+      await page.hover(".player .vol input");
+      await page.mouse.wheel(0, 100);
+      await page.waitForFunction((v) => Number(document.querySelector(".player .vol input").value) === v, Math.max(0, v0 - 5));
+      await page.mouse.wheel(0, -100);
+      await page.waitForFunction((v) => Number(document.querySelector(".player .vol input").value) === v, v0);
+      if (await page.evaluate(() => document.scrollingElement.scrollTop) !== 0) throw new Error("the page scrolled");
+    });
+  }
 
   await step("next song (gapless queue)", async () => {
     await page.keyboard.press("Shift+ArrowRight");
@@ -178,7 +191,7 @@ for (const [name, server] of servers) {
     await page.waitForSelector("table.songs tr");
     const rows = await page.$$eval("table.songs tr .title > a", (els) => els.map((e) => e.textContent));
     if (rows.length !== 3) throw new Error(`queue has ${rows.length} rows`);
-    await page.click("table.songs tr:nth-child(3) button[title]:has-text('↑')");
+    await page.click("table.songs tr:nth-child(3) button:has(svg[data-icon=Up])");
     await page.waitForFunction(() =>
       document.querySelectorAll("table.songs tr .title > a")[1]?.textContent.includes("High A"));
   });
@@ -222,7 +235,7 @@ for (const [name, server] of servers) {
     await page.evaluate(() => { location.hash = "#/search/Song"; });
     await page.waitForSelector("table.songs tr");
     for (const n of [1, 2]) {
-      await page.click(`table.songs tr:nth-child(${n}) button[title]:has-text("≣")`);
+      await page.click(`table.songs tr:nth-child(${n}) button:has(svg[data-icon=AddToPlaylist])`);
       await page.click(`.dialog .pick button:text("${pl}")`);
       await page.waitForSelector(".dialog", { state: "detached" });
     }
@@ -235,7 +248,7 @@ for (const [name, server] of servers) {
       await page.waitForFunction((first) =>
         document.querySelector("table.songs .title > a")?.textContent === first, before[1]);
     }
-    await page.click('button[title]:has-text("🗑")');
+    await page.click('button:has(svg[data-icon=Delete])');
     await page.waitForFunction(() => location.hash === "#/playlists");
   });
 
@@ -253,7 +266,7 @@ for (const [name, server] of servers) {
     await page.click("form.stack button[type=submit]");
     const row = page.locator("table.songs tr", { hasText: n });
     await row.waitFor();
-    await row.locator('button:has-text("✕")').click();
+    await row.locator('button:has(svg[data-icon=Remove])').click();
     await row.waitFor({ state: "detached" });
   });
 
@@ -261,12 +274,12 @@ for (const [name, server] of servers) {
     await step("share an album", async () => {
       await page.evaluate(() => { location.hash = "#/albums/alphabeticalByName"; });
       await page.click('.grid .card .name:text("Sine Studies")');
-      await page.click('.head button[title]:has-text("🔗")');
+      await page.click('.head button:has(svg[data-icon=Share])');
       await page.waitForSelector(".toast");
       await clickNav(page, "#/shares");
       const row = page.locator("table.songs tr", { hasText: "Sine Studies" });
       await row.waitFor();
-      await row.locator('button:has-text("✕")').click();
+      await row.locator('button:has(svg[data-icon=Remove])').click();
       await row.waitFor({ state: "detached" });
     });
   }

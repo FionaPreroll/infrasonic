@@ -137,5 +137,7 @@
  "status.playlist_created": "Playlist angelegt.",
  "status.restored": "Warteschlange vom Server übernommen ({n} Titel).",
  "status.starred": "Zu Favoriten hinzugefügt.",
- "status.unstarred": "Aus Favoriten entfernt."
+ "status.unstarred": "Aus Favoriten entfernt.",
+ "action.mute": "Stumm schalten",
+ "action.unmute": "Ton an"
 }

@@ -12,6 +12,7 @@ use super::widgets::{
     ListOpts, album_grid, artist_card, cover, fmt_time, fmt_total, load, loading, share,
     song_actions, song_list, songs_n, star_button, stars,
 };
+use super::icons::{Icon, icon};
 use super::{App, Route, app, apply_theme, playback_settings, replay_gain};
 use crate::i18n::{t, tf};
 use crate::store::{Profile, Settings};
@@ -117,7 +118,7 @@ pub fn Login() -> impl IntoView {
                                 ps.remove(&key);
                                 ps.save();
                             });
-                        }>"✕"</button>
+                        }>{icon(Icon::Remove)}</button>
                     </li>
                 }
             })
@@ -361,7 +362,7 @@ fn album(id: String) -> impl IntoView {
                         {star_button(StarTarget::album(a.id.clone()), a.starred.is_some())}
                         {stars(a.id.clone(), a.user_rating.filter(|r| *r > 0))}
                         <button class="icon-btn" title=t("action.share") on:click=move |_| share(app, id.clone(), name.clone())>
-                            "🔗"
+                            {icon(Icon::Share)}
                         </button>
                     </div>
                     {song_actions(a.song.clone())}
@@ -499,7 +500,7 @@ fn artist(id: String) -> impl IntoView {
                     <p class="muted">{tf("artist.albums_n", &[("n", &a.album.len())])}</p>
                     <div class="row">
                         {star_button(StarTarget::artist(a.id.clone()), a.starred.is_some())}
-                        <button on:click=radio>"📻 " {t("artist.radio")}</button>
+                        <button on:click=radio>{icon(Icon::Radio)} {t("artist.radio")}</button>
                     </div>
                     {move || info.get().and_then(|i| i.biography).map(|b| strip_tags(&b)).filter(|b| !b.is_empty()).map(|b| view! {
                         <details class="bio"><summary>{t("artist.bio")}</summary><p>{b}</p></details>
@@ -649,8 +650,8 @@ fn playlist(id: String) -> impl IntoView {
                         {songs_n(p.entry.len())} " · " {fmt_total(total)}
                     </p>
                     <div class="row">
-                        <button class="icon-btn" title=t("action.share") on:click=move |_| share(app, id.get_value(), name.clone())>"🔗"</button>
-                        <button class="icon-btn" title=t("playlist.delete") on:click=delete>"🗑"</button>
+                        <button class="icon-btn" title=t("action.share") on:click=move |_| share(app, id.get_value(), name.clone())>{icon(Icon::Share)}</button>
+                        <button class="icon-btn" title=t("playlist.delete") on:click=delete>{icon(Icon::Delete)}</button>
                     </div>
                     {song_actions(p.entry.clone())}
                 </div>
@@ -799,10 +800,10 @@ fn queue() -> impl IntoView {
                         </td>
                         <td class="actions">
                             <button class="icon-btn" title=t("action.up") disabled=i == 0
-                                on:click=move |_| p.send(Command::Move { from: i, to: i.saturating_sub(1) })>"↑"</button>
+                                on:click=move |_| p.send(Command::Move { from: i, to: i.saturating_sub(1) })>{icon(Icon::Up)}</button>
                             <button class="icon-btn" title=t("action.down")
-                                on:click=move |_| p.send(Command::Move { from: i, to: i + 1 })>"↓"</button>
-                            <button class="icon-btn" title=t("action.remove") on:click=move |_| p.send(Command::Remove(i))>"✕"</button>
+                                on:click=move |_| p.send(Command::Move { from: i, to: i + 1 })>{icon(Icon::Down)}</button>
+                            <button class="icon-btn" title=t("action.remove") on:click=move |_| p.send(Command::Remove(i))>{icon(Icon::Remove)}</button>
                         </td>
                         <td class="dur muted">{fmt_time(tr.duration.unwrap_or(0.0))}</td>
                     </tr>
@@ -827,9 +828,9 @@ fn queue() -> impl IntoView {
             }}
         </p>
         <div class="actions-row">
-            <button on:click=move |_| p.send(Command::Shuffle)>"⤮ " {t("action.shuffle")}</button>
-            <button on:click=save>"≣ " {t("queue.save")}</button>
-            <button on:click=move |_| p.send(Command::Clear)>"✕ " {t("queue.clear")}</button>
+            <button on:click=move |_| p.send(Command::Shuffle)>{icon(Icon::Shuffle)} {t("action.shuffle")}</button>
+            <button on:click=save>{icon(Icon::Save)} {t("queue.save")}</button>
+            <button on:click=move |_| p.send(Command::Clear)>{icon(Icon::Delete)} {t("queue.clear")}</button>
         </div>
         <Show
             when=move || p.queue.with(|q| !q.is_empty())
@@ -893,13 +894,13 @@ fn radio() -> impl IntoView {
                                 </td>
                                 <td class="actions">
                                     {s.home_page_url.clone().filter(|h| h.starts_with("http")).map(|h| view! {
-                                        <a class="icon-btn" href=h target="_blank" rel="noopener" title=t("radio.home")>"⌂"</a>
+                                        <a class="icon-btn" href=h target="_blank" rel="noopener" title=t("radio.home")>{icon(Icon::External)}</a>
                                     })}
                                     <button class="icon-btn" title=t("action.remove") on:click=move |_| {
                                         let Some(c) = app.client() else { return };
                                         let id = del.clone();
                                         app.call(async move { c.delete_internet_radio_station(&id).await }, move |()| app.reload());
-                                    }>"✕"</button>
+                                    }>{icon(Icon::Remove)}</button>
                                 </td>
                             </tr>
                         }
@@ -948,12 +949,12 @@ fn shares() -> impl IntoView {
                                     </div>
                                 </td>
                                 <td class="actions">
-                                    <button class="icon-btn" title=t("action.copy") on:click=move |_| super::widgets::copy_text(app, url.clone())>"⧉"</button>
+                                    <button class="icon-btn" title=t("action.copy") on:click=move |_| super::widgets::copy_text(app, url.clone())>{icon(Icon::Copy)}</button>
                                     <button class="icon-btn" title=t("action.remove") on:click=move |_| {
                                         let Some(c) = app.client() else { return };
                                         let id = id.clone();
                                         app.call(async move { c.delete_share(&id).await }, move |()| app.reload());
-                                    }>"✕"</button>
+                                    }>{icon(Icon::Remove)}</button>
                                 </td>
                             </tr>
                         }
@@ -1034,7 +1035,7 @@ fn settings() -> impl IntoView {
                             ps.remove(&key);
                             ps.save();
                         });
-                    }>"✕"</button>
+                    }>{icon(Icon::Remove)}</button>
                 </li>
             }
         }).collect_view()

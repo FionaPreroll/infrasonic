@@ -3,6 +3,7 @@
 //! without server rewrites), the player bar, keyboard shortcuts, Media Session, scrobbling
 //! and the server queue sync.
 
+mod icons;
 mod pages;
 pub mod player;
 mod widgets;

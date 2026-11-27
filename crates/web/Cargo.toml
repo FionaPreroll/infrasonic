@@ -42,7 +42,7 @@ web-sys = { version = "0.3", features = [
   "EventTarget", "HtmlAudioElement", "HtmlElement", "HtmlInputElement", "HtmlMediaElement",
   "HtmlSelectElement", "KeyboardEvent", "Location", "MediaMetadata", "MediaSession",
   "MediaSessionAction", "MediaSessionActionDetails", "MediaSessionPlaybackState", "MessageChannel",
-  "MessageEvent", "MessagePort", "MouseEvent", "Navigator", "Request", "RequestInit", "Response",
+  "MessageEvent", "MessagePort", "MouseEvent", "WheelEvent", "Navigator", "Request", "RequestInit", "Response",
   "ServiceWorkerContainer", "Storage", "Window", "Worker", "WorkerGlobalScope", "WorkerOptions",
   "WorkerType", "console",
 ] }

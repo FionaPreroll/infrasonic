@@ -137,5 +137,7 @@
  "status.playlist_created": "Playlist created.",
  "status.restored": "Queue from the server restored ({n} songs).",
  "status.starred": "Added to favorites.",
- "status.unstarred": "Removed from favorites."
+ "status.unstarred": "Removed from favorites.",
+ "action.mute": "Mute",
+ "action.unmute": "Unmute"
 }

@@ -6,6 +6,7 @@ use infrasonic_subsonic::{Album, Artist, Child, Client, PlaylistUpdate, StarTarg
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use super::icons::{Icon, icon};
 use super::{App, Route, app};
 use crate::i18n::{t, tf};
 
@@ -53,7 +54,7 @@ pub fn cover_url(art: Option<&str>, size: u32) -> Option<String> {
 pub fn cover(art: Option<String>, size: u32, class: &'static str) -> AnyView {
     match cover_url(art.as_deref(), size) {
         Some(src) => view! { <img class=class src=src loading="lazy" alt=""/> }.into_any(),
-        None => view! { <div class=format!("{class} nocover")>"♪"</div> }.into_any(),
+        None => view! { <div class=format!("{class} nocover")>{icon(Icon::Music)}</div> }.into_any(),
     }
 }
 
@@ -138,7 +139,7 @@ pub fn toggle_star_current(app: App) {
 pub fn Sidebar() -> impl IntoView {
     let app = app();
     let query = RwSignal::new(String::new());
-    let link = move |r: Route, key: &'static str, icon: &'static str| {
+    let link = move |r: Route, key: &'static str, ic: Icon| {
         let href = r.hash();
         let target = r.clone();
         let active = move || {
@@ -148,7 +149,7 @@ pub fn Sidebar() -> impl IntoView {
         };
         view! {
             <a href=href class:active=active>
-                <span class="icon">{icon}</span>
+                {icon(ic)}
                 <span class="label">{t(key)}</span>
             </a>
         }
@@ -174,15 +175,15 @@ pub fn Sidebar() -> impl IntoView {
                     on:input=move |ev| query.set(event_target_value(&ev))
                 />
             </form>
-            {link(Route::Albums("newest".into()), "nav.albums", "◫")}
-            {link(Route::Artists, "nav.artists", "☺")}
-            {link(Route::Playlists, "nav.playlists", "≣")}
-            {link(Route::Favorites, "nav.favorites", "♥")}
-            {link(Route::Radio, "nav.radio", "📻")}
-            {link(Route::Shares, "nav.shares", "🔗")}
-            {link(Route::Queue, "nav.queue", "☰")}
-            {link(Route::Lyrics, "nav.lyrics", "✎")}
-            {link(Route::Settings, "nav.settings", "⚙")}
+            {link(Route::Albums("newest".into()), "nav.albums", Icon::Albums)}
+            {link(Route::Artists, "nav.artists", Icon::Artists)}
+            {link(Route::Playlists, "nav.playlists", Icon::Playlists)}
+            {link(Route::Favorites, "nav.favorites", Icon::Heart)}
+            {link(Route::Radio, "nav.radio", Icon::Radio)}
+            {link(Route::Shares, "nav.shares", Icon::Share)}
+            {link(Route::Queue, "nav.queue", Icon::Queue)}
+            {link(Route::Lyrics, "nav.lyrics", Icon::Lyrics)}
+            {link(Route::Settings, "nav.settings", Icon::Settings)}
         </nav>
     }
 }
@@ -242,16 +243,24 @@ pub fn PlayerBar() -> impl IntoView {
                         title=t("action.star")
                         on:click=move |_| toggle_star_current(app)
                     >
-                        "♥"
+                        {icon(Icon::Heart)}
                     </button>
                 </Show>
             }
         })
     };
+    let set_volume = move |v: u8| {
+        p.send(Command::SetVolume(v));
+        app.settings.update(|s| {
+            s.volume = v;
+            s.save();
+        });
+    };
+    // The volume to go back to after unmuting.
+    let unmuted = RwSignal::new(80u8);
     let repeat_icon = move || match snap.with(|s| s.repeat) {
-        RepeatMode::Off => "↻",
-        RepeatMode::All => "🔁",
-        RepeatMode::One => "🔂",
+        RepeatMode::Off | RepeatMode::All => icon(Icon::Repeat),
+        RepeatMode::One => icon(Icon::RepeatOne),
     };
     view! {
         <footer class="player">
@@ -259,7 +268,7 @@ pub fn PlayerBar() -> impl IntoView {
             <div class="controls">
                 <div class="buttons">
                     <button class="icon-btn" title=t("action.previous") on:click=move |_| p.send(Command::Previous)>
-                        "⏮"
+                        {icon(Icon::Previous)}
                     </button>
                     <button
                         class="icon-btn play"
@@ -267,10 +276,10 @@ pub fn PlayerBar() -> impl IntoView {
                         title=t("action.play_pause")
                         on:click=move |_| p.send(Command::TogglePause)
                     >
-                        {move || if playing() { "⏸" } else { "▶" }}
+                        {move || icon(if playing() { Icon::Pause } else { Icon::Play })}
                     </button>
                     <button class="icon-btn" title=t("action.next") on:click=move |_| p.send(Command::Next)>
-                        "⏭"
+                        {icon(Icon::Next)}
                     </button>
                     <button
                         class="icon-btn"
@@ -310,29 +319,50 @@ pub fn PlayerBar() -> impl IntoView {
             </div>
             <div class="extra">
                 <button class="icon-btn" title=t("nav.lyrics") on:click=move |_| app.go(Route::Lyrics)>
-                    "✎"
+                    {icon(Icon::Lyrics)}
                 </button>
                 <button class="icon-btn" title=t("nav.queue") on:click=move |_| app.go(Route::Queue)>
-                    "☰"
+                    {icon(Icon::Queue)}
                 </button>
-                <span class="icon">{move || if snap.with(|s| s.volume) == 0 { "🔇" } else { "🔊" }}</span>
-                <input
-                    type="range"
-                    class="volume"
-                    min="0"
-                    max="100"
-                    title=t("settings.volume")
-                    prop:value=move || snap.with(|s| s.volume)
-                    on:input=move |ev| {
-                        if let Ok(v) = event_target_value(&ev).parse::<u8>() {
-                            p.send(Command::SetVolume(v));
-                            app.settings.update(|s| {
-                                s.volume = v;
-                                s.save();
-                            });
-                        }
+                <div class="vol" on:wheel=move |ev: web_sys::WheelEvent| {
+                    // Scrolling up is louder; one notch is 5 %.
+                    let dy = ev.delta_y();
+                    if dy == 0.0 {
+                        return;
                     }
-                />
+                    ev.prevent_default();
+                    let v = snap.with_untracked(|s| s.volume);
+                    set_volume(if dy < 0.0 { v.saturating_add(5).min(100) } else { v.saturating_sub(5) });
+                }>
+                    <button
+                        class="icon-btn"
+                        title=move || t(if snap.with(|s| s.volume) == 0 { "action.unmute" } else { "action.mute" })
+                        on:click=move |_| {
+                            let v = snap.with_untracked(|s| s.volume);
+                            if v == 0 {
+                                set_volume(unmuted.get_untracked().max(5));
+                            } else {
+                                unmuted.set(v);
+                                set_volume(0);
+                            }
+                        }
+                    >
+                        {move || icon(if snap.with(|s| s.volume) == 0 { Icon::Muted } else { Icon::Volume })}
+                    </button>
+                    <input
+                        type="range"
+                        class="volume"
+                        min="0"
+                        max="100"
+                        title=move || format!("{} {} %", t("settings.volume"), snap.with(|s| s.volume))
+                        prop:value=move || snap.with(|s| s.volume)
+                        on:input=move |ev| {
+                            if let Ok(v) = event_target_value(&ev).parse::<u8>() {
+                                set_volume(v);
+                            }
+                        }
+                    />
+                </div>
             </div>
         </footer>
     }
@@ -522,7 +552,7 @@ pub fn stars(id: String, rating: Option<u8>) -> impl IntoView {
                                 );
                             }
                         >
-                            "★"
+                            {icon(Icon::Star)}
                         </button>
                     }
                 })
@@ -546,7 +576,7 @@ pub fn star_button(target: StarTarget, starred: bool) -> impl IntoView {
                 app.star(target.clone(), new, move || on.set(new));
             }
         >
-            "♥"
+            {icon(Icon::Heart)}
         </button>
     }
 }
@@ -646,16 +676,16 @@ pub fn song_list(songs: Vec<Child>, opts: ListOpts) -> impl IntoView {
                         <td class="actions">
                             {star_button(StarTarget::id(id.clone()), s.is_starred())}
                             <button class="icon-btn" title=t("action.play_next") on:click=move |_| app.player.play_next(std::slice::from_ref(&one))>
-                                "⤵"
+                                {icon(Icon::PlayNext)}
                             </button>
                             <button class="icon-btn" title=t("action.enqueue") on:click=move |_| app.player.enqueue(std::slice::from_ref(&one2))>
-                                "+"
+                                {icon(Icon::Enqueue)}
                             </button>
                             <button class="icon-btn" title=t("playlist.add_to") on:click=move |_| app.picker.set(Some(vec![song_id.clone()]))>
-                                "≣"
+                                {icon(Icon::AddToPlaylist)}
                             </button>
                             {on_remove.map(|cb| view! {
-                                <button class="icon-btn" title=t("action.remove") on:click=move |_| cb.run(i)>"✕"</button>
+                                <button class="icon-btn" title=t("action.remove") on:click=move |_| cb.run(i)>{icon(Icon::Remove)}</button>
                             })}
                         </td>
                         <td class="dur muted">{fmt_time(f64::from(s.duration.unwrap_or(0)))}</td>
@@ -684,7 +714,7 @@ pub fn album_card(a: &Album) -> impl IntoView + use<> {
         <div class="card">
             <div class="art" on:click=move |_| app.go(Route::Album(id.clone()))>
                 {cover(a.cover_art.clone(), 300, "cover")}
-                <button class="play-over" title=t("action.play") on:click=play>"▶"</button>
+                <button class="play-over" title=t("action.play") on:click=play>{icon(Icon::Play)}</button>
             </div>
             <a class="name" href=Route::Album(a.id.clone()).hash()>{a.display_name().to_string()}</a>
             <a
@@ -725,19 +755,19 @@ pub fn song_actions(songs: Vec<Child>) -> impl IntoView {
     view! {
         <div class="actions-row">
             <button class="primary" on:click=move |_| songs.with_value(|s| app.player.play_songs(s, 0))>
-                "▶ " {t("action.play")}
+                {icon(Icon::Play)} {t("action.play")}
             </button>
             <button on:click=move |_| {
                 songs.with_value(|s| app.player.play_songs(s, 0));
                 app.player.send(Command::Shuffle);
             }>
-                "⤮ " {t("action.shuffle")}
+                {icon(Icon::Shuffle)} {t("action.shuffle")}
             </button>
             <button on:click=move |_| songs.with_value(|s| app.player.enqueue(s))>
-                "+ " {t("action.enqueue")}
+                {icon(Icon::Enqueue)} {t("action.enqueue")}
             </button>
             <button on:click=move |_| songs.with_value(|s| app.picker.set(Some(s.iter().map(|c| c.id.clone()).collect())))>
-                "≣ " {t("playlist.add_to")}
+                {icon(Icon::AddToPlaylist)} {t("playlist.add_to")}
             </button>
         </div>
     }
