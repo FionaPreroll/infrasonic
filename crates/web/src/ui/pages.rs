@@ -15,7 +15,7 @@ use super::widgets::{
 };
 use super::{App, Route, app, apply_theme, playback_settings, replay_gain};
 use crate::i18n::{t, tf};
-use crate::store::{Profile, Settings};
+use crate::store::{Profile, Settings, web_link};
 
 pub fn page(r: Route) -> AnyView {
     match r {
@@ -893,7 +893,7 @@ fn radio() -> impl IntoView {
                                     <div class="sub muted">{s.stream_url.clone()}</div>
                                 </td>
                                 <td class="actions">
-                                    {s.home_page_url.clone().filter(|h| h.starts_with("http")).map(|h| view! {
+                                    {s.home_page_url.as_deref().and_then(web_link).map(|h| view! {
                                         <a class="icon-btn" href=h target="_blank" rel="noopener" title=t("radio.home")>{icon(Icon::External)}</a>
                                     })}
                                     <button class="icon-btn" title=t("action.remove") on:click=move |_| {
@@ -939,7 +939,7 @@ fn shares() -> impl IntoView {
                         view! {
                             <tr>
                                 <td class="title">
-                                    <a href=s.url.clone() target="_blank" rel="noopener">
+                                    <a href=web_link(&s.url) target="_blank" rel="noopener">
                                         {s.description.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| s.url.clone())}
                                     </a>
                                     <div class="sub muted">

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Server profiles and settings in the browser's `localStorage`. Passwords are never stored:
-//! a profile keeps an API key or a salted token.
+//! Server profiles and settings in the browser's `localStorage`. A profile keeps an API key or
+//! a salted token, not the password; only the legacy login (`plain`, for servers that cannot
+//! check tokens) has to keep the password itself.
 
 use infrasonic_subsonic::Auth;
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,14 @@ pub fn normalize_url(url: &str) -> String {
     } else {
         format!("https://{u}")
     }
+}
+
+/// `url` if it is safe as the target of a link: an absolute `http` or `https` URL. Links from
+/// the server (share links, radio home pages) could otherwise be `javascript:` URLs that run in
+/// the player's origin, next to the saved logins.
+pub fn web_link(url: &str) -> Option<String> {
+    let u = url::Url::parse(url.trim()).ok()?;
+    matches!(u.scheme(), "http" | "https").then(|| u.to_string())
 }
 
 /// All saved profiles; the first is the one in use.
@@ -211,6 +220,26 @@ mod tests {
         }
         let k = Profile::new("http://h:4533", "me", "", "KEY", false);
         assert_eq!(k.auth(), Auth::ApiKey { key: "KEY".into() });
+    }
+
+    #[test]
+    fn only_web_links() {
+        assert_eq!(
+            web_link(" https://music.example.org/share/x ").as_deref(),
+            Some("https://music.example.org/share/x")
+        );
+        assert!(web_link("http://radio.example.org").is_some());
+        for bad in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            " javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "httpjavascript:alert(1)",
+            "/relative",
+            "",
+        ] {
+            assert_eq!(web_link(bad), None, "{bad}");
+        }
     }
 
     #[test]

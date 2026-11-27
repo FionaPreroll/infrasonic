@@ -39,7 +39,11 @@ jobs:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-corpus-${{ matrix.target }}-
-      - run: scripts/fuzz.sh "${{ inputs.fuzz_seconds || '600' }}" ${{ matrix.target }}
+      # Inputs through the environment, never spliced into the script.
+      - env:
+          FUZZ_SECONDS: ${{ inputs.fuzz_seconds || '600' }}
+          TARGET: ${{ matrix.target }}
+        run: scripts/fuzz.sh "$FUZZ_SECONDS" "$TARGET"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

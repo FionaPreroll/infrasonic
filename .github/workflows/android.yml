@@ -42,7 +42,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           cache-disabled: true
       # The host library (bindings, JVM tests) links ALSA through cpal.
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: out/infrasonic-android-*
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: out/*
           generate_release_notes: true
@@ -158,7 +158,7 @@ jobs:
         with:
           name: signed
           path: out
-      - uses: r0adkll/upload-google-play@v1
+      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         if: env.PLAY_JSON != ''
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
