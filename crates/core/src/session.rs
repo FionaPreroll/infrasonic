@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use infrasonic_engine::output::OutputFactory;
-use infrasonic_engine::{Command, Engine, EngineConfig, Event, Snapshot, SnapshotReader, Track};
+use infrasonic_engine::{
+    Command, Engine, EngineConfig, Event, QueueEntry, Snapshot, SnapshotReader, Track,
+};
 use infrasonic_subsonic::{Child, Client, ServerInfo, StarTarget, StreamOptions};
 use tokio::sync::mpsc;
 
@@ -465,19 +467,23 @@ struct Pump {
     preload: usize,
 }
 
-/// Download the songs after the next one into the cache (the engine opens the next one
-/// itself, and that download is cached too).
-fn prefetch(p: &Pump, uid: u64) {
+/// Download the songs after the next one into the cache, one at a time once the playing and
+/// the next song are in (the engine opens the next one itself, and that download is cached
+/// too).
+fn prefetch(p: &Pump, playing: &QueueEntry) {
     if p.preload == 0 || p.provider.cache().is_none_or(|c| !c.enabled()) {
         return;
     }
-    let snap = p.snapshot.get();
-    let Some(i) = snap.queue.iter().position(|e| e.uid == uid) else {
-        return;
-    };
-    for e in snap.queue.iter().skip(i + 2).take(p.preload) {
-        p.provider.prefetch(&e.track.id);
-    }
+    // The queue is read when the chain starts: the snapshot may not show it yet.
+    let (snapshot, uid, preload) = (p.snapshot.clone(), playing.uid, p.preload);
+    p.provider.prefetch(&playing.track.id, move || {
+        let snap = snapshot.get();
+        let Some(i) = snap.queue.iter().position(|e| e.uid == uid) else {
+            return Vec::new();
+        };
+        let ids = snap.queue.iter().skip(i + 2).take(preload);
+        ids.map(|e| e.track.id.clone()).collect()
+    });
 }
 
 fn spawn_event_pump(p: Pump) {
@@ -502,7 +508,7 @@ fn spawn_event_pump(p: Pump) {
             let mut tracker = ScrobbleTracker::new();
             while let Ok(ev) = events.recv() {
                 if let Event::TrackChanged(Some(e)) = &ev {
-                    prefetch(&p, e.uid);
+                    prefetch(&p, e);
                 }
                 let action = match &ev {
                     Event::TrackChanged(entry) => tracker.track_changed(

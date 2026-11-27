@@ -118,6 +118,20 @@ impl AudioCache {
         None
     }
 
+    /// Whether the song is pinned or cached in this variant (without marking it as used).
+    pub fn contains(&self, id: &str, variant: &str) -> bool {
+        self.pin_path(id).is_file() || (self.enabled() && self.cache_path(id, variant).is_file())
+    }
+
+    /// Songs being downloaded into the cache right now (pins not counted).
+    pub fn downloads(&self) -> usize {
+        self.inflight
+            .lock()
+            .iter()
+            .filter(|k| k.ends_with(":false"))
+            .count()
+    }
+
     /// Claim a download, so that the same song is not fetched twice at once.
     /// Returns `None` if it is already being downloaded.
     pub fn begin(self: &Arc<Self>, id: &str, variant: &str, pin: bool) -> Option<CacheWriter> {

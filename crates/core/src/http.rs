@@ -2,6 +2,8 @@
 //! Streams tracks from the Subsonic server into the engine.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use infrasonic_engine::source::{StreamWriter, stream_pair};
 use infrasonic_engine::{Error as EngineError, MediaSource, SourceProvider, Track};
@@ -21,6 +23,8 @@ pub struct HttpSourceProvider {
     /// Options for pinned songs; `None` uses `options`.
     pin_options: Arc<RwLock<Option<StreamOptions>>>,
     cache: Arc<RwLock<Option<Arc<AudioCache>>>>,
+    /// Bumped for each prefetch chain; an older chain stops when it sees a newer one.
+    chain: Arc<AtomicU64>,
 }
 
 /// Cache variant name for stream options: the original file or a transcoding.
@@ -42,6 +46,7 @@ impl HttpSourceProvider {
             options: Arc::new(RwLock::new(options)),
             pin_options: Arc::new(RwLock::new(None)),
             cache: Arc::new(RwLock::new(None)),
+            chain: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -54,24 +59,56 @@ impl HttpSourceProvider {
         self.cache.read().clone()
     }
 
-    /// Download a song into the cache without playing it. Returns false if it is cached
-    /// already, being downloaded, or caching is off.
-    pub fn prefetch(&self, id: &str) -> bool {
+    /// Download songs into the cache without playing them, one after the other, once
+    /// `playing` is cached and no other song is downloading. Prefetching thus never competes
+    /// with playback for the connection, which other players may share. `ids` is asked for
+    /// the songs at that point; a later call replaces the chain; cached songs are skipped.
+    pub fn prefetch(&self, playing: &str, ids: impl FnOnce() -> Vec<String> + Send + 'static) {
         let Some(cache) = self.cache() else {
-            return false;
+            return;
         };
-        let opts = self.options.read().clone();
-        let v = variant(&opts);
-        if cache.lookup(id, &v).is_some() {
-            return false;
-        }
-        let Some(w) = cache.begin(id, &v, false) else {
-            return false;
-        };
-        let url = self.client.stream_url(id, &opts);
-        self.handle
-            .spawn(download_file(self.http.clone(), url, w, None));
-        true
+        let generation = self.chain.fetch_add(1, Ordering::SeqCst) + 1;
+        let this = self.clone();
+        let playing = playing.to_string();
+        self.handle.spawn(async move {
+            let current = || this.chain.load(Ordering::SeqCst) == generation;
+            let idle = |wait_for: Option<&str>| {
+                let v = variant(&this.options.read());
+                wait_for.is_none_or(|p| cache.contains(p, &v)) && cache.downloads() == 0
+            };
+            let mut wait_for = Some(playing.as_str());
+            let mut ids = Some(ids);
+            let mut list = Vec::new();
+            loop {
+                while !idle(wait_for) {
+                    if !current() {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                if !current() {
+                    return;
+                }
+                wait_for = None;
+                if let Some(ids) = ids.take() {
+                    list = ids();
+                    list.reverse();
+                }
+                let Some(id) = list.pop() else {
+                    return;
+                };
+                let opts = this.options.read().clone();
+                let v = variant(&opts);
+                if cache.contains(&id, &v) {
+                    continue;
+                }
+                let Some(w) = cache.begin(&id, &v, false) else {
+                    continue;
+                };
+                let url = this.client.stream_url(&id, &opts);
+                download_file(this.http.clone(), url, w, None).await;
+            }
+        });
     }
 
     /// Download a song into the pinned store. Resolves when the file is in place.

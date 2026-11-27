@@ -253,6 +253,62 @@ async fn check_cache(server: &Server) {
     offline.shutdown().await.expect("shutdown");
 }
 
+/// While the first song plays, the following ones are downloaded in advance, but never more
+/// than the playing and the next song at once.
+async fn check_prefetch(server: &Server) {
+    use std::sync::Arc;
+
+    use infrasonic_core::cache::{AudioCache, server_key};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cache = Arc::new(AudioCache::new(
+        &dir.path().join("cache"),
+        &dir.path().join("data"),
+        &server_key(&server.url, "admin"),
+        64 << 20,
+    ));
+    let playback = PlaybackConfig {
+        save_queue_on_exit: false,
+        scrobble: false,
+        preload_songs: 2,
+        ..PlaybackConfig::default()
+    };
+    let (out, _) = capturing_output(1.0);
+    let (session, mut rx) = Session::connect(&server.name, &server.profile(), playback, out)
+        .await
+        .expect("connect");
+    session.set_cache(Some(cache.clone()));
+    let songs = formats_album_songs(&session).await;
+    session.play_songs(&songs, 0);
+    wait_for(&mut rx, Duration::from_secs(10), |e| {
+        *e == SessionEvent::Engine(Event::StateChanged(PlayState::Playing))
+    })
+    .await;
+    session.send(Command::Pause);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut most = 0;
+    while songs.iter().any(|s| !cache.contains(&s.id, "raw")) && Instant::now() < deadline {
+        most = most.max(cache.downloads());
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    for s in &songs {
+        assert!(
+            cache.contains(&s.id, "raw"),
+            "{}: {} not cached",
+            server.name,
+            s.title
+        );
+    }
+    assert!(most <= 2, "{}: {most} downloads at once", server.name);
+    session.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_prefetches_one_at_a_time() {
+    for s in servers() {
+        check_prefetch(&s).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn session_caches_and_pins() {
     for s in servers() {
