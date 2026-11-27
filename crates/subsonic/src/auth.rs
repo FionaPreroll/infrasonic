@@ -13,6 +13,13 @@ pub enum Auth {
     Plain { username: String, password: String },
     /// OpenSubsonic `apiKeyAuthentication`.
     ApiKey { key: String },
+    /// Token authentication with one fixed salt, so that the password itself need not be
+    /// stored (the web player keeps this in the browser). Create it with [`Auth::salted`].
+    SaltedToken {
+        username: String,
+        token: String,
+        salt: String,
+    },
 }
 
 impl std::fmt::Debug for Auth {
@@ -27,6 +34,10 @@ impl std::fmt::Debug for Auth {
                 .field("username", username)
                 .finish_non_exhaustive(),
             Auth::ApiKey { .. } => f.debug_struct("ApiKey").finish_non_exhaustive(),
+            Auth::SaltedToken { username, .. } => f
+                .debug_struct("SaltedToken")
+                .field("username", username)
+                .finish_non_exhaustive(),
         }
     }
 }
@@ -35,7 +46,9 @@ impl Auth {
     /// Username, if this auth method has one.
     pub fn username(&self) -> Option<&str> {
         match self {
-            Auth::Token { username, .. } | Auth::Plain { username, .. } => Some(username),
+            Auth::Token { username, .. }
+            | Auth::Plain { username, .. }
+            | Auth::SaltedToken { username, .. } => Some(username),
             Auth::ApiKey { .. } => None,
         }
     }
@@ -56,6 +69,25 @@ impl Auth {
                 ("p", format!("enc:{}", hex::encode(password.as_bytes()))),
             ],
             Auth::ApiKey { key } => vec![("apiKey", key.clone())],
+            Auth::SaltedToken {
+                username,
+                token,
+                salt,
+            } => vec![
+                ("u", username.clone()),
+                ("t", token.clone()),
+                ("s", salt.clone()),
+            ],
+        }
+    }
+
+    /// Token auth with a salt chosen now; the result holds no password.
+    pub fn salted(username: &str, password: &str) -> Self {
+        let salt = new_salt();
+        Auth::SaltedToken {
+            username: username.to_string(),
+            token: token(password, &salt),
+            salt,
         }
     }
 }
@@ -103,6 +135,15 @@ mod tests {
             password: "pw".into(),
         };
         assert_ne!(a.params()[2].1, a.params()[2].1);
+    }
+
+    #[test]
+    fn salted_token_keeps_no_password() {
+        let a = Auth::salted("u", "sesame");
+        let p = a.params();
+        assert_eq!(p[1].1, token("sesame", &p[2].1));
+        assert_eq!(a.params(), p, "same salt every time");
+        assert!(!format!("{a:?}").contains("sesame"));
     }
 
     #[test]

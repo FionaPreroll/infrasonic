@@ -63,26 +63,41 @@ jobs:
       - run: cargo test --no-run -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
       - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
 
-  wasm:
-    name: WebAssembly spike
+  web:
+    name: Web player (${{ matrix.browser }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit, mobile]
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check -p infrasonic-subsonic -p infrasonic-engine --target wasm32-unknown-unknown
+        with:
+          key: web
       - run: cargo check -p infrasonic-engine --features cpal/wasm-bindgen --target wasm32-unknown-unknown
       - name: wasm-bindgen CLI
         run: |
           v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name=="wasm-bindgen") | .version')
           cargo install wasm-bindgen-cli --version "$v" --locked
+      - run: scripts/web.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Playwright
-        working-directory: crates/web-spike
-        run: npm install --no-save playwright@1 && npx playwright install --with-deps chromium
-      - run: scripts/web-spike.sh
+        run: |
+          npm install --no-save --prefix crates/web/tests playwright@1
+          b=${{ matrix.browser }}; [ "$b" = mobile ] && b=chromium
+          npx --prefix crates/web/tests playwright install --with-deps "$b"
+      - name: Pull server images
+        run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
+      - name: Browser test against Navidrome and gonic
+        run: |
+          python3 -m http.server 8098 --bind 127.0.0.1 --directory target/web &
+          b=${{ matrix.browser }}; flags=""
+          [ "$b" = mobile ] && b=chromium && flags=--mobile
+          scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ "$b" $flags
 
   android:
     name: Android build

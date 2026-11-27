@@ -12,6 +12,8 @@ authors.workspace = true
 default = ["cpal-output"]
 ## Audio output via cpal (CoreAudio, ALSA, WASAPI, AAudio, WebAudio).
 cpal-output = ["dep:cpal"]
+## Serialize commands, events and snapshots (for the browser worker protocol).
+serde = ["dep:serde"]
 
 [dependencies]
 symphonia = { workspace = true, features = ["mp3", "flac", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "pcm", "aiff", "mkv", "adpcm", "id3v2", "ape"] }
@@ -25,6 +27,7 @@ thiserror.workspace = true
 tracing.workspace = true
 rand.workspace = true
 web-time = "1"
+serde = { workspace = true, optional = true, features = ["rc"] }
 cpal = { workspace = true, optional = true }
 
 [dev-dependencies]

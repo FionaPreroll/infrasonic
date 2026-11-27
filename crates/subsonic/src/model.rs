@@ -403,3 +403,35 @@ impl AlbumListType {
         }
     }
 }
+
+/// An internet radio station (`getInternetRadioStations`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InternetRadioStation {
+    #[serde(deserialize_with = "id")]
+    pub id: Id,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub stream_url: String,
+    pub home_page_url: Option<String>,
+}
+
+/// A public link to songs (`getShares`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Share {
+    #[serde(deserialize_with = "id")]
+    pub id: Id,
+    #[serde(default)]
+    pub url: String,
+    pub description: Option<String>,
+    pub username: Option<String>,
+    pub created: Option<String>,
+    pub expires: Option<String>,
+    pub last_visited: Option<String>,
+    #[serde(default)]
+    pub visit_count: u64,
+    #[serde(default)]
+    pub entry: Vec<Child>,
+}

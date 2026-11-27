@@ -24,6 +24,7 @@ use crate::{Error, SourceProvider, Track, volume_to_gain};
 
 /// Commands understood by the engine.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Command {
     /// Replace the queue. Starts at `start` / `position` seconds; stays paused unless `play`.
     SetQueue {
@@ -66,6 +67,7 @@ pub enum Command {
 
 /// Playback state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlayState {
     #[default]
     Stopped,
@@ -77,6 +79,7 @@ pub enum PlayState {
 
 /// Notifications from the engine.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Event {
     StateChanged(PlayState),
     /// The audible track changed (`None` when playback stopped).
@@ -97,6 +100,7 @@ pub enum Event {
 
 /// A consistent view of the engine state.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Snapshot {
     pub state: PlayState,
     pub current: Option<QueueEntry>,

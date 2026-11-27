@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Publishes the web player: GitHub Pages and the container image
+# ghcr.io/fionapreroll/infrasonic-web (amd64, arm64). Runs for tags web-v* and by hand.
+name: Web player release
+
+on:
+  push:
+    tags: ["web-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-release
+  cancel-in-progress: false
+
+jobs:
+  pages:
+    name: GitHub Pages
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      - name: wasm-bindgen CLI
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name=="wasm-bindgen") | .version')
+          cargo install wasm-bindgen-cli --version "$v" --locked
+      - run: scripts/web.sh
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/web
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  image:
+    name: Container image
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/fionapreroll/infrasonic-web
+          tags: |
+            type=match,pattern=web-v(.*),group=1
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/web-v') }}
+            type=sha
+          labels: |
+            org.opencontainers.image.licenses=GPL-3.0-only
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/web/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -3,6 +3,7 @@
 
 /// ReplayGain values of a track. Gains in dB, peaks as linear sample values (1.0 = full scale).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReplayGain {
     pub track_gain: Option<f32>,
     pub track_peak: Option<f32>,
@@ -78,6 +79,7 @@ fn parse_q78(s: &str) -> Option<f32> {
 
 /// Which gain to use.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ReplayGainMode {
     /// No normalisation.
     #[default]
@@ -90,6 +92,7 @@ pub enum ReplayGainMode {
 
 /// ReplayGain settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReplayGainConfig {
     pub mode: ReplayGainMode,
     /// Added to every gain, in dB.

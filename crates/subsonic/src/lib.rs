@@ -779,6 +779,74 @@ impl Client {
         self.call_unit("deleteBookmark", &[("id", id.into())]).await
     }
 
+    /// `getInternetRadioStations`.
+    pub async fn get_internet_radio_stations(&self) -> Result<Vec<InternetRadioStation>> {
+        self.call(
+            "getInternetRadioStations",
+            &[],
+            &["internetRadioStations", "internetRadioStation"],
+            false,
+        )
+        .await
+    }
+
+    /// `createInternetRadioStation` (admins only on most servers).
+    pub async fn create_internet_radio_station(
+        &self,
+        name: &str,
+        stream_url: &str,
+        home_page_url: Option<&str>,
+    ) -> Result<()> {
+        let mut p: Params = vec![("name", name.into()), ("streamUrl", stream_url.into())];
+        if let Some(h) = home_page_url {
+            p.push(("homepageUrl", h.into()));
+        }
+        self.call_unit("createInternetRadioStation", &p).await
+    }
+
+    /// `deleteInternetRadioStation`.
+    pub async fn delete_internet_radio_station(&self, id: &str) -> Result<()> {
+        self.call_unit("deleteInternetRadioStation", &[("id", id.into())])
+            .await
+    }
+
+    /// `getShares`.
+    pub async fn get_shares(&self) -> Result<Vec<Share>> {
+        self.call("getShares", &[], &["shares", "share"], false)
+            .await
+    }
+
+    /// `createShare` for songs, albums or playlists. `expires_ms` is a Unix time in ms.
+    pub async fn create_share(
+        &self,
+        ids: &[&str],
+        description: Option<&str>,
+        expires_ms: Option<u64>,
+    ) -> Result<Share> {
+        let mut p: Params = ids.iter().map(|i| ("id", (*i).to_string())).collect();
+        if let Some(d) = description {
+            p.push(("description", d.into()));
+        }
+        if let Some(e) = expires_ms {
+            p.push(("expires", e.to_string()));
+        }
+        let shares: Vec<Share> = self
+            .call("createShare", &p, &["shares", "share"], true)
+            .await?;
+        shares
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::MissingPayload {
+                endpoint: "createShare".into(),
+                key: "share".into(),
+            })
+    }
+
+    /// `deleteShare`.
+    pub async fn delete_share(&self, id: &str) -> Result<()> {
+        self.call_unit("deleteShare", &[("id", id.into())]).await
+    }
+
     /// `getArtistInfo2`.
     pub async fn get_artist_info2(&self, id: &str, count: u32) -> Result<ArtistInfo> {
         self.call(

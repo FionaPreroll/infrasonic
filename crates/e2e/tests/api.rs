@@ -325,3 +325,47 @@ async fn subsonic_api() {
         check_server(&s).await;
     }
 }
+
+async fn check_radio_and_shares(s: &Server) {
+    let c = s.client();
+    // A salted token (what the web player stores) logs in like the password.
+    let salted = Client::new(&s.url, Auth::salted("admin", "admin")).expect("client");
+    salted.ping().await.expect("salted token login");
+
+    let name = format!("e2e radio {}", s.name);
+    c.create_internet_radio_station(&name, "https://radio.example.org/stream", None)
+        .await
+        .expect("create station");
+    let stations = c.get_internet_radio_stations().await.expect("stations");
+    let st = stations
+        .iter()
+        .find(|x| x.name == name)
+        .unwrap_or_else(|| panic!("{}: station missing in {stations:?}", s.name));
+    assert_eq!(st.stream_url, "https://radio.example.org/stream");
+    c.delete_internet_radio_station(&st.id)
+        .await
+        .expect("delete station");
+    let after = c.get_internet_radio_stations().await.expect("stations");
+    assert!(after.iter().all(|x| x.name != name), "{}", s.name);
+
+    // Shares: Navidrome (with sharing enabled); gonic has none and says so.
+    let al = album(&c, "Sine Studies").await;
+    match c.create_share(&[&al.id], Some("e2e"), None).await {
+        Ok(share) => {
+            assert!(share.url.starts_with("http"), "{}: {share:?}", s.name);
+            let shares = c.get_shares().await.expect("shares");
+            assert!(shares.iter().any(|x| x.id == share.id), "{}", s.name);
+            c.delete_share(&share.id).await.expect("delete share");
+            let after = c.get_shares().await.expect("shares");
+            assert!(after.iter().all(|x| x.id != share.id), "{}", s.name);
+        }
+        Err(e) => assert_eq!(s.name, "gonic", "{}: {e}", s.name),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn radio_and_shares() {
+    for s in servers() {
+        check_radio_and_shares(&s).await;
+    }
+}

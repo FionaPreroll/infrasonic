@@ -65,3 +65,16 @@ opt-level = 2
 # opus-decoder 0.1.1 with a speed fix and an overflow fix; see vendor/opus-decoder/INFRASONIC.md.
 [patch.crates-io]
 opus-decoder = { path = "vendor/opus-decoder" }
+
+# The web player: smaller WebAssembly at a small speed cost (`scripts/web.sh`).
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+# wasm-bindgen reads the `target_features` section, which a full strip removes.
+strip = "debuginfo"
+
+# The audio worker of the web player: built for speed, since it decodes.
+[profile.web-worker]
+inherits = "release"
+strip = "debuginfo"

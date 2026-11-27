@@ -1,0 +1,51 @@
+[package]
+name = "infrasonic-web"
+description = "Web player for Subsonic and OpenSubsonic servers (Leptos, engine in a Web Worker)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Two WebAssembly programs share this crate: the page (`infrasonic-web`, Leptos) and the audio
+# worker (`infrasonic-engine-worker`, decoding). Each only links what it uses.
+[[bin]]
+name = "infrasonic-web"
+path = "src/bin/web.rs"
+
+[[bin]]
+name = "infrasonic-engine-worker"
+path = "src/bin/worker.rs"
+
+[dependencies]
+infrasonic-engine = { workspace = true, features = ["serde"] }
+infrasonic-subsonic.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+parking_lot.workspace = true
+futures.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+leptos = { version = "0.8.23", features = ["csr"] }
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+  "AudioContext", "AudioContextOptions", "AudioContextState", "AudioDestinationNode", "AudioNode",
+  "AudioWorklet", "AudioWorkletNode", "AudioWorkletNodeOptions", "BaseAudioContext", "Blob", "Clipboard", "ScrollBehavior",
+  "ScrollIntoViewOptions", "ScrollLogicalPosition", "SubmitEvent", "HtmlFormElement",
+  "DedicatedWorkerGlobalScope", "Document", "DragEvent", "DataTransfer", "Element", "Event",
+  "EventTarget", "HtmlAudioElement", "HtmlElement", "HtmlInputElement", "HtmlMediaElement",
+  "HtmlSelectElement", "KeyboardEvent", "Location", "MediaMetadata", "MediaSession",
+  "MediaSessionAction", "MediaSessionActionDetails", "MediaSessionPlaybackState", "MessageChannel",
+  "MessageEvent", "MessagePort", "MouseEvent", "Navigator", "Request", "RequestInit", "Response",
+  "ServiceWorkerContainer", "Storage", "Window", "Worker", "WorkerGlobalScope", "WorkerOptions",
+  "WorkerType", "console",
+] }
+
+[lints]
+workspace = true

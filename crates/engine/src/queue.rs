@@ -10,6 +10,7 @@ use crate::Track;
 
 /// Repeat behaviour when a track ends.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RepeatMode {
     #[default]
     Off,
@@ -32,6 +33,7 @@ impl RepeatMode {
 
 /// A track in the queue.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QueueEntry {
     /// Unique within the lifetime of the queue.
     pub uid: u64,

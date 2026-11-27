@@ -20,7 +20,7 @@ trap cleanup EXIT
 
 docker run -d --rm --name "$ND" -p 127.0.0.1::4533 -v "$MUSIC:/music:ro" \
   -e ND_LOGLEVEL=warn -e ND_ENABLEEXTERNALSERVICES=false -e ND_AGENTS= \
-  -e ND_ENABLEINSIGHTSCOLLECTOR=false "$NAVIDROME_IMAGE" >/dev/null
+  -e ND_ENABLEINSIGHTSCOLLECTOR=false -e ND_ENABLESHARING=true "$NAVIDROME_IMAGE" >/dev/null
 docker run -d --rm --name "$GO" -p 127.0.0.1::80 -v "$MUSIC:/music:ro" \
   --tmpfs /podcasts --tmpfs /playlists --tmpfs /cache --tmpfs /data \
   -e GONIC_SCAN_AT_START_ENABLED=true "$GONIC_IMAGE" >/dev/null

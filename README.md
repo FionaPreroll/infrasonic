@@ -2,9 +2,9 @@
 
 A music player for [Subsonic](http://www.subsonic.org/pages/api.jsp) and
 [OpenSubsonic](https://opensubsonic.netlify.app/) servers such as Navidrome and gonic, written in
-Rust. The first frontend is a terminal player and the successor of
-[STMPS](https://github.com/spezifisch/stmps). A lightweight web player and an Android app will
-use the same engine later.
+Rust. It comes as a terminal player, the successor of
+[STMPS](https://github.com/spezifisch/stmps), and as a web player that runs the same engine in
+the browser. An Android app will follow.
 
 infrasonic plays only what your server streams. It does not need mpv, VLC or any other external
 player: decoding (MP3, FLAC, Vorbis, Opus, AAC/ALAC, WAV/AIFF), resampling, gapless playback and
@@ -108,6 +108,44 @@ verbose.
 Building on Linux needs the ALSA and D-Bus headers (`libasound2-dev libdbus-1-dev pkg-config` on
 Debian and Ubuntu).
 
+## Web player
+
+The web player is a static site: the page (Leptos) and the engine run as WebAssembly, the engine
+in a Web Worker that feeds an AudioWorklet, so albums play gapless with exact ReplayGain. Where
+that does not work well (iPhone and iPad, browsers without AudioWorklet) and for internet radio,
+the browser's own audio element plays instead; the setting can be changed by hand.
+
+It covers what you use Navidrome's web UI for as a listener: albums with covers and sorting
+(newest, recently played, most played, top rated, favorites, random, A–Z, by genre and years),
+artist pages with biography, top songs and similar artists, playlists with drag and drop, the
+queue, synced lyrics, favorites and ratings, search, internet radio and shares. Besides that:
+the queue is saved on the server and picked up on other devices, several servers can be saved
+as profiles, light and dark theme, English and German, Media Session (lock screen, media keys)
+and keyboard shortcuts (`?` shows them). It installs as an app (PWA) and works offline as far as
+the player itself goes. The first visit transfers about 0.6 MB; the audio worker (0.8 MB) loads
+with the first song.
+
+Logins stay in the browser: with an API key (OpenSubsonic) no password is stored at all,
+otherwise a salted token. The player only talks to your server, which must allow cross-origin
+requests (Navidrome and gonic do) and, for a player served over HTTPS, be reachable over HTTPS.
+
+**Container image** (amd64 and arm64, static-web-server, runs as a non-root user):
+
+```sh
+docker run -d -p 8080:8080 -e INFRASONIC_SERVER=https://music.example.org \
+  ghcr.io/fionapreroll/infrasonic-web
+```
+
+| Variable | |
+|---|---|
+| `INFRASONIC_SERVER` | Server address filled in on the login page (the field is hidden then). |
+| `INFRASONIC_BASE_PATH` | Serve under a path, e.g. `/music` behind a reverse proxy at `https://example.org/music/`. |
+
+**Any web server**: `scripts/web.sh` builds the site into `target/web` (needs the
+`wasm32-unknown-unknown` target and `wasm-bindgen-cli` in the version of `Cargo.lock`);
+`scripts/web.sh --serve` serves it on http://127.0.0.1:8098. Tags `web-v*` publish it to GitHub
+Pages and the image to ghcr.io.
+
 ## Crates
 
 | Crate | |
@@ -118,7 +156,7 @@ Debian and Ubuntu).
 | `crates/tui` | The `infrasonic` terminal player (ratatui). |
 | `crates/headless` | `infrasonic-headless`, a player without UI. The Android prototype: the engine plays on the device, started from `adb shell`. |
 | `crates/e2e` | End-to-end and soak tests against real servers. |
-| `crates/web-spike` | Proof that the engine's decoders run in the browser (groundwork for the web player). |
+| `crates/web` | The web player: page and audio worker (WebAssembly), assets in `www/`, container image in `docker/`. |
 | `vendor/opus-decoder` | opus-decoder 0.1.1 with a speed fix and an overflow fix, until they are released upstream. |
 
 ## Android prototype
@@ -144,11 +182,13 @@ scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-
                                                  # Navidrome and gonic in Docker, incl. headless TUI test
 INFRASONIC_SOAK_SECS=600 scripts/e2e-servers.sh cargo test --release -p infrasonic-e2e --test soak -- --nocapture
 scripts/fuzz.sh 60                               # all fuzz targets, needs nightly and cargo-fuzz
-scripts/web-spike.sh [--serve]                   # engine in headless Chromium, needs wasm-bindgen-cli and Playwright
+scripts/web.sh && python3 -m http.server 8098 --bind 127.0.0.1 --directory target/web &
+scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ chromium [--mobile]
+                                                 # web player in a browser (chromium, firefox, webkit), needs Playwright
 ```
 
 The test music in `testdata/music` is generated (see `testdata/README.md`). CI runs formatting,
-clippy, tests on Linux, macOS and Windows, the end-to-end tests, WebAssembly check, the Android
+clippy, tests on Linux, macOS and Windows, the end-to-end tests, the web player in Chromium, Firefox, WebKit and mobile Chromium, the Android
 build and `cargo deny`; fuzzing and a 30 minute soak run nightly.
 
 ## License

@@ -1,0 +1,31 @@
+# static-web-server settings of the infrasonic-web image.
+[general]
+host = "0.0.0.0"
+port = 8080
+log-level = "warn"
+compression = true
+# Serve the .gz files made at build time (the server does not compress WebAssembly itself).
+compression-static = true
+health = true
+directory-listing = false
+# Own cache headers below instead of the server's defaults.
+cache-control-headers = false
+
+[advanced]
+
+# Files keep their names between releases, so browsers revalidate them (cheap with ETags).
+[[advanced.headers]]
+source = "**/*"
+[advanced.headers.headers]
+Cache-Control = "no-cache"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "no-referrer"
+# Isolation from other sites' windows; "credentialless" keeps covers and streams from the
+# music server working (they come without cookies anyway).
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Embedder-Policy = "credentialless"
+
+[[advanced.headers]]
+source = "**/*.{png,svg}"
+[advanced.headers.headers]
+Cache-Control = "public, max-age=604800"

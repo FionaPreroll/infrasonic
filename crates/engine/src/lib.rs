@@ -42,6 +42,7 @@ pub enum Error {
 /// Metadata of a playable track. The engine only needs `id` and a format hint; the rest is
 /// carried along for frontends.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Track {
     pub id: String,
     pub title: String,
