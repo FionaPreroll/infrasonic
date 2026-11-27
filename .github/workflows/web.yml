@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Publishes the web player: GitHub Pages and the container image
-# ghcr.io/fionapreroll/infrasonic-web (amd64, arm64). Runs for tags web-v* and by hand.
-name: Web player release
+# Publishes the web player. Every push to main deploys it to GitHub Pages; tags web-v*
+# also publish the container image ghcr.io/fionapreroll/infrasonic-web (amd64, arm64).
+name: Web player deploy
 
 on:
   push:
+    branches: [main]
     tags: ["web-v*"]
   workflow_dispatch:
 
@@ -12,12 +13,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: web-release
-  cancel-in-progress: false
+  group: web-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pages:
     name: GitHub Pages
+    # The github-pages environment only accepts the default branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -47,6 +50,7 @@ jobs:
 
   image:
     name: Container image
+    if: startsWith(github.ref, 'refs/tags/web-v')
     runs-on: ubuntu-24.04
     permissions:
       packages: write

@@ -143,8 +143,9 @@ docker run -d -p 8080:8080 -e INFRASONIC_SERVER=https://music.example.org \
 
 **Any web server**: `scripts/web.sh` builds the site into `target/web` (needs the
 `wasm32-unknown-unknown` target and `wasm-bindgen-cli` in the version of `Cargo.lock`);
-`scripts/web.sh --serve` serves it on http://127.0.0.1:8098. Tags `web-v*` publish it to GitHub
-Pages and the image to ghcr.io.
+`scripts/web.sh --serve` serves it on http://127.0.0.1:8098. Every push to `main` deploys it to
+GitHub Pages (https://fionapreroll.github.io/infrasonic/); tags `web-v*` also publish the image
+to ghcr.io.
 
 ## Crates
 
