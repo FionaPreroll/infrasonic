@@ -132,8 +132,11 @@
     <string name="auth_token_hint">Sends a salted hash; the password is not stored. Works with most servers.</string>
     <string name="auth_plain_hint">For servers that need the password itself (LDAP). It is stored on this device.</string>
     <string name="auth_api_key_hint">OpenSubsonic API key, for example from Navidrome.</string>
-    <string name="self_signed">Accept self-signed certificate</string>
-    <string name="self_signed_hint">Only for servers you run yourself.</string>
+    <string name="self_signed">Trust the server\'s own certificate</string>
+    <string name="self_signed_hint">For self-signed servers you run yourself. Only the one certificate seen at the first connection is accepted.</string>
+    <string name="self_signed_pinned">Trusted certificate: SHA-256 %1$s</string>
+    <string name="self_signed_first_use">The certificate the server shows at the next test or connection will be trusted.</string>
+    <string name="self_signed_retrust">Trust a new certificate</string>
     <string name="plain_http_warning">Without https, the login can be read on the network.</string>
     <string name="test_connection">Test</string>
     <string name="test_ok">Works: %1$s</string>

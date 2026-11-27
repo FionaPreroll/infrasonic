@@ -34,6 +34,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -150,6 +151,9 @@ fun ServerEditScreen(id: String) {
     // Saved passwords are not shown; an empty field keeps the saved login.
     var secret by rememberSaveable { mutableStateOf("") }
     var selfSigned by rememberSaveable { mutableStateOf(existing?.allowSelfSigned ?: false) }
+    // The trusted certificate (SHA-256) of a server with its own; a new address or a new trust
+    // starts without one, and the next test or connection fills it in (trust on first use).
+    var pin by rememberSaveable { mutableStateOf(existing?.pinnedCertificate) }
     var testing by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Result<ServerStatus>?>(null) }
 
@@ -179,7 +183,7 @@ fun ServerEditScreen(id: String) {
         val u = url.trim().trimEnd('/')
         if (!u.startsWith("http://") && !u.startsWith("https://") || u.length < 10) return null
         val n = name.trim().ifEmpty { u.toUri().host ?: u }
-        return ServerProfile(existing?.id ?: Graph.servers.newId(), n, u, a, selfSigned)
+        return ServerProfile(existing?.id ?: Graph.servers.newId(), n, u, a, selfSigned, if (selfSigned) pin else null)
     }
 
     val valid = profile() != null
@@ -191,7 +195,11 @@ fun ServerEditScreen(id: String) {
             if (first) Text(stringResource(R.string.welcome), style = MaterialTheme.typography.bodyLarge)
             OutlinedTextField(
                 url,
-                { url = it; result = null },
+                {
+                    pin = if (it.trim().trimEnd('/') == existing?.url) existing?.pinnedCertificate else null
+                    url = it
+                    result = null
+                },
                 Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.server_url)) },
                 singleLine = true,
@@ -246,7 +254,18 @@ fun ServerEditScreen(id: String) {
                     Text(stringResource(R.string.self_signed))
                     Text(stringResource(R.string.self_signed_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(selfSigned, { selfSigned = it; result = null })
+                Switch(selfSigned, { selfSigned = it; pin = null; result = null })
+            }
+            if (selfSigned) {
+                val p = pin
+                Text(
+                    if (p != null) stringResource(R.string.self_signed_pinned, groupedFingerprint(p)) else stringResource(R.string.self_signed_first_use),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (p != null) {
+                    TextButton(onClick = { pin = null; result = null }) { Text(stringResource(R.string.self_signed_retrust)) }
+                }
             }
             if (url.trim().startsWith("http://")) {
                 Text(stringResource(R.string.plain_http_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -263,6 +282,8 @@ fun ServerEditScreen(id: String) {
                     testing = true
                     scope.launch {
                         result = runCatching { Graph.core.testConnection(p) }
+                        // The certificate seen on first use is the one trusted from now on.
+                        result?.getOrNull()?.certificate?.let { if (selfSigned && pin == null) pin = it }
                         testing = false
                     }
                 }) { Text(stringResource(R.string.test_connection)) }
@@ -284,3 +305,6 @@ fun ServerEditScreen(id: String) {
         }
     }
 }
+
+/** `ab12cd…` → `AB:12:CD:…`, as certificate viewers show fingerprints. */
+private fun groupedFingerprint(hex: String): String = hex.uppercase().chunked(2).joinToString(":")

@@ -131,8 +131,11 @@
     <string name="auth_token_hint">Sendet einen gesalzenen Hash; das Passwort wird nicht gespeichert. Geht mit den meisten Servern.</string>
     <string name="auth_plain_hint">Für Server, die das Passwort selbst brauchen (LDAP). Es wird auf dem Gerät gespeichert.</string>
     <string name="auth_api_key_hint">OpenSubsonic-API-Schlüssel, zum Beispiel aus Navidrome.</string>
-    <string name="self_signed">Selbst signiertes Zertifikat akzeptieren</string>
-    <string name="self_signed_hint">Nur für Server, die du selbst betreibst.</string>
+    <string name="self_signed">Eigenem Zertifikat des Servers vertrauen</string>
+    <string name="self_signed_hint">Für selbst signierte Server, die du selbst betreibst. Nur das Zertifikat vom ersten Verbinden wird akzeptiert.</string>
+    <string name="self_signed_pinned">Vertrautes Zertifikat: SHA-256 %1$s</string>
+    <string name="self_signed_first_use">Das Zertifikat, das der Server beim nächsten Test oder Verbinden zeigt, wird vertraut.</string>
+    <string name="self_signed_retrust">Neuem Zertifikat vertrauen</string>
     <string name="plain_http_warning">Ohne https kann die Anmeldung im Netz mitgelesen werden.</string>
     <string name="test_connection">Testen</string>
     <string name="test_ok">Klappt: %1$s</string>

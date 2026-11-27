@@ -251,7 +251,7 @@ impl Infrasonic {
     fn start(&self, profile: ServerProfile, client: Client, info: ss::ServerInfo) -> ServerStatus {
         let _guard = self.rt.enter();
         let settings = self.settings.lock().clone();
-        let status = ServerStatus::from_info(&info);
+        let status = ServerStatus::from_info(&info, &client);
         let (session, events) = Session::with_client(
             client,
             info,
@@ -485,7 +485,7 @@ impl Infrasonic {
     /// Check a server without connecting the player.
     pub async fn test_connection(&self, profile: ServerProfile) -> Result<ServerStatus> {
         let client = profile.client()?;
-        self.run(async move { Ok(ServerStatus::from_info(&client.connect().await?)) })
+        self.run(async move { Ok(ServerStatus::from_info(&client.connect().await?, &client)) })
             .await
     }
 

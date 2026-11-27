@@ -21,6 +21,8 @@ mod auth;
 mod de;
 mod error;
 pub mod model;
+#[cfg(not(target_arch = "wasm32"))]
+mod tls;
 
 use std::sync::{Arc, RwLock};
 
@@ -31,11 +33,49 @@ use url::Url;
 pub use auth::{Auth, token};
 pub use error::{Error, Result};
 pub use model::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub use tls::{fingerprint as certificate_fingerprint, normalize_fingerprint};
 
 /// API version this client speaks.
 pub const API_VERSION: &str = "1.16.1";
 /// Default client name sent as `c` parameter.
 pub const DEFAULT_CLIENT_NAME: &str = "infrasonic";
+/// The largest API response read, so that a broken or hostile server cannot exhaust memory.
+/// Far above what a large library sends (a full `getArtists` of 100 000 artists is about 20 MB).
+pub const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+/// The largest cover image read.
+pub const MAX_COVER_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The body of `resp`, at most `limit` bytes.
+pub async fn read_body(resp: reqwest::Response, endpoint: &str, limit: u64) -> Result<Vec<u8>> {
+    let too_large = || Error::TooLarge {
+        endpoint: endpoint.to_string(),
+        limit,
+    };
+    if resp.content_length().is_some_and(|n| n > limit) {
+        return Err(too_large());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut resp = resp;
+        let mut body = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if (body.len() + chunk.len()) as u64 > limit {
+                return Err(too_large());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let body = resp.bytes().await?;
+        if body.len() as u64 > limit {
+            return Err(too_large());
+        }
+        Ok(body.to_vec())
+    }
+}
 
 /// Options for `search3`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +165,7 @@ pub struct ClientBuilder {
     client_name: String,
     http: Option<reqwest::Client>,
     accept_invalid_certs: bool,
+    own_certificate: Option<Option<String>>,
 }
 
 impl ClientBuilder {
@@ -147,6 +188,19 @@ impl ClientBuilder {
         self
     }
 
+    /// Trust the server's own certificate (self-signed, a home CA) by the SHA-256 of its DER
+    /// encoding, as hex with or without colons, instead of through a CA. With `None` the
+    /// client takes whatever certificate the server presents, and [`Client::certificate`] tells
+    /// which, to be pinned from then on (trust on first use). Takes precedence over
+    /// [`ClientBuilder::accept_invalid_certs`]. No effect in the browser.
+    pub fn trust_own_certificate(mut self, fingerprint: Option<&str>) -> Self {
+        self.own_certificate = Some(fingerprint.map(|f| {
+            // A malformed fingerprint matches no certificate, so nothing is trusted by mistake.
+            tls_normalize(f).unwrap_or_else(|| f.to_string())
+        }));
+        self
+    }
+
     /// Build the client.
     pub fn build(self) -> Result<Client> {
         let mut base = Url::parse(self.base_url.trim())?;
@@ -159,17 +213,31 @@ impl ClientBuilder {
         base.set_fragment(None);
         let _ = base.set_username("");
         let _ = base.set_password(None);
+        let seen = self
+            .own_certificate
+            .as_ref()
+            .map(|_| Arc::new(std::sync::Mutex::new(None)));
+        let trust = match (&self.own_certificate, &seen) {
+            #[cfg(not(target_arch = "wasm32"))]
+            (Some(pin), Some(seen)) => Trust::Own(
+                tls::config(tls::PinVerifier::new(pin.clone(), seen.clone()))
+                    .map_err(|e| Error::Tls(e.to_string()))?,
+            ),
+            _ if self.accept_invalid_certs => Trust::Any,
+            _ => Trust::System,
+        };
         let (http, stream_http) = match self.http {
             Some(h) => (h.clone(), h),
             None => (
-                default_http_client(self.accept_invalid_certs, false)?,
-                default_http_client(self.accept_invalid_certs, true)?,
+                default_http_client(&trust, false)?,
+                default_http_client(&trust, true)?,
             ),
         };
         Ok(Client {
             inner: Arc::new(Inner {
                 http,
                 stream_http,
+                seen,
                 base,
                 auth: self.auth,
                 client_name: self.client_name,
@@ -187,15 +255,40 @@ pub fn ensure_crypto_provider() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn tls_normalize(f: &str) -> Option<String> {
+    tls::normalize_fingerprint(f)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn tls_normalize(f: &str) -> Option<String> {
+    Some(f.to_ascii_lowercase())
+}
+
+/// Which server certificates the client accepts.
+enum Trust {
+    /// Those a CA of the system vouches for.
+    System,
+    /// Any (the user asked for it).
+    Any,
+    /// The server's own, pinned or on first use.
+    #[cfg(not(target_arch = "wasm32"))]
+    Own(rustls::ClientConfig),
+}
+
 /// The HTTP client for API calls (`streaming = false`, with a total timeout) or for audio
 /// downloads (no total timeout: large files on slow links may take minutes).
-fn default_http_client(accept_invalid_certs: bool, streaming: bool) -> Result<reqwest::Client> {
+fn default_http_client(trust: &Trust, streaming: bool) -> Result<reqwest::Client> {
     ensure_crypto_provider();
     let b = reqwest::Client::builder();
     #[cfg(not(target_arch = "wasm32"))]
-    let b = b.tls_danger_accept_invalid_certs(accept_invalid_certs);
+    let (b, own) = match trust {
+        Trust::System => (b, false),
+        Trust::Any => (b.tls_danger_accept_invalid_certs(true), false),
+        Trust::Own(config) => (b.tls_backend_preconfigured(config.clone()), true),
+    };
     #[cfg(target_arch = "wasm32")]
-    let _ = (accept_invalid_certs, streaming);
+    let _ = (trust, streaming);
     #[cfg(not(target_arch = "wasm32"))]
     let b = b
         .connect_timeout(std::time::Duration::from_secs(10))
@@ -207,7 +300,9 @@ fn default_http_client(accept_invalid_certs: bool, streaming: bool) -> Result<re
         b.timeout(std::time::Duration::from_secs(60))
     };
     #[cfg(target_os = "android")]
-    let b = android_roots(b);
+    let b = if own { b } else { android_roots(b) };
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    let _ = own;
     Ok(b.build()?)
 }
 
@@ -246,6 +341,8 @@ fn android_roots(b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
 struct Inner {
     http: reqwest::Client,
     stream_http: reqwest::Client,
+    /// The certificate the server presented, when it is trusted by its own certificate.
+    seen: Option<Arc<std::sync::Mutex<Option<String>>>>,
     base: Url,
     auth: Auth,
     client_name: String,
@@ -356,12 +453,23 @@ impl Client {
             client_name: DEFAULT_CLIENT_NAME.to_string(),
             http: None,
             accept_invalid_certs: false,
+            own_certificate: None,
         }
     }
 
     /// The server base URL (always ends with `/`).
     pub fn base_url(&self) -> &Url {
         &self.inner.base
+    }
+
+    /// SHA-256 fingerprint (lowercase hex) of the certificate the server presented in the
+    /// latest connection, if the client trusts the server's own certificate (see
+    /// [`ClientBuilder::trust_own_certificate`]); `None` before the first connection.
+    pub fn certificate(&self) -> Option<String> {
+        self.inner
+            .seen
+            .as_ref()
+            .and_then(|s| s.lock().ok().and_then(|s| s.clone()))
     }
 
     /// The configured authentication.
@@ -444,7 +552,7 @@ impl Client {
                 .await?
         };
         let resp = resp.error_for_status()?;
-        Ok(resp.bytes().await?.to_vec())
+        read_body(resp, endpoint, MAX_RESPONSE_BYTES).await
     }
 
     async fn call<T: DeserializeOwned + Default>(
@@ -1058,7 +1166,7 @@ impl Client {
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.contains("json"));
-        let bytes = resp.bytes().await?.to_vec();
+        let bytes = read_body(resp, "getCoverArt", MAX_COVER_BYTES).await?;
         if is_json {
             // Errors are reported as a JSON document instead of an image.
             parse_response::<()>("getCoverArt", &bytes, &[], false)?;

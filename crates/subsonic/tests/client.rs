@@ -205,3 +205,26 @@ async fn podcasts_and_jukebox() {
         .expect("skip");
     assert_eq!(s.current_index, Some(2));
 }
+
+#[tokio::test]
+async fn bodies_beyond_the_limit_are_refused() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/big"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(vec![b'x'; 4096], "application/json"))
+        .mount(&server)
+        .await;
+    let get = || async {
+        reqwest::get(format!("{}/big", server.uri()))
+            .await
+            .expect("response")
+    };
+    let e = infrasonic_subsonic::read_body(get().await, "big", 1000)
+        .await
+        .expect_err("too large");
+    assert!(matches!(e, Error::TooLarge { limit: 1000, .. }), "{e}");
+    let body = infrasonic_subsonic::read_body(get().await, "big", 4096)
+        .await
+        .expect("within the limit");
+    assert_eq!(body.len(), 4096);
+}

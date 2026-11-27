@@ -18,3 +18,6 @@ Navidrome and gonic and rely on exactly these nine songs.
 88200 frames, encoded separately as FLAC, MP3, Vorbis, Opus and AAC. All parts carry ReplayGain
 tags (track −3 dB, album −4.5 dB). `crates/engine/tests/gapless.rs` checks that the parts play
 back to back without gaps, also when resampled, and that ReplayGain is applied.
+
+`tls/` holds two self-signed test certificates with their keys (EC P-256, made with
+`openssl req -x509`, valid until 2126), for `crates/subsonic/tests/tls.rs`. They protect nothing.

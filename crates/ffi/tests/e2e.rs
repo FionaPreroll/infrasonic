@@ -38,6 +38,7 @@ fn profile(url: &str, auth: ServerAuth) -> ServerProfile {
         url: url.into(),
         auth,
         allow_self_signed: false,
+        pinned_certificate: None,
     }
 }
 
@@ -99,6 +100,7 @@ fn profiles_and_settings_are_saved() {
         id: "k".into(),
         auth: ServerAuth::ApiKey { key: "abc".into() },
         allow_self_signed: true,
+        pinned_certificate: Some("ab".repeat(32)),
         ..p.clone()
     };
     a.save_profiles(vec![p.clone(), k.clone()], Some("k".into()))
