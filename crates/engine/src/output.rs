@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 /// The engine's end of an output's ring buffer, for implementing [`OutputFactory`].
@@ -545,6 +545,7 @@ impl OutputFactory for NullOutputFactory {
         let speed = self.speed.max(0.01);
         let capture = self.capture.clone();
         let tick = Duration::from_millis(5);
+        const MAX_CATCH_UP: u64 = 50;
         let thread = std::thread::Builder::new()
             .name("infrasonic-null-output".into())
             .spawn(move || {
@@ -552,11 +553,26 @@ impl OutputFactory for NullOutputFactory {
                     .ceil() as usize)
                     .max(1);
                 let mut buf = vec![0.0f32; frames_per_tick * spec.channels];
+                // Paced by the clock, not by the sleeps: a loaded machine oversleeps (macOS
+                // runners by several ms), which would slow playback down. Late ticks catch up,
+                // a few at a time.
+                let start = Instant::now();
+                let mut ticks: u64 = 0;
                 while !stop2.load(Ordering::Acquire) {
-                    let audible = render(&mut consumer, &shared, &mut buf, spec.channels);
-                    if let Some(c) = &capture {
-                        c.lock().extend_from_slice(&buf[..audible * spec.channels]);
+                    let due = (start.elapsed().as_secs_f64() / tick.as_secs_f64()) as u64 + 1;
+                    let behind = due.saturating_sub(ticks);
+                    for _ in 0..behind.min(MAX_CATCH_UP) {
+                        let audible = render(&mut consumer, &shared, &mut buf, spec.channels);
+                        if let Some(c) = &capture {
+                            c.lock().extend_from_slice(&buf[..audible * spec.channels]);
+                        }
                     }
+                    // After a long stall (a debugger, a suspended machine) start afresh.
+                    ticks = if behind > MAX_CATCH_UP {
+                        due
+                    } else {
+                        ticks + behind
+                    };
                     std::thread::sleep(tick);
                 }
             })
