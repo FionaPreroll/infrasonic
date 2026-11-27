@@ -54,7 +54,9 @@ pub fn cover_url(art: Option<&str>, size: u32) -> Option<String> {
 pub fn cover(art: Option<String>, size: u32, class: &'static str) -> AnyView {
     match cover_url(art.as_deref(), size) {
         Some(src) => view! { <img class=class src=src loading="lazy" alt=""/> }.into_any(),
-        None => view! { <div class=format!("{class} nocover")>{icon(Icon::Music)}</div> }.into_any(),
+        None => {
+            view! { <div class=format!("{class} nocover")>{icon(Icon::Music)}</div> }.into_any()
+        }
     }
 }
 

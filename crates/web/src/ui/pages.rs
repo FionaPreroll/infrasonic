@@ -8,11 +8,11 @@ use infrasonic_subsonic::{
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use super::icons::{Icon, icon};
 use super::widgets::{
     ListOpts, album_grid, artist_card, cover, fmt_time, fmt_total, load, loading, share,
     song_actions, song_list, songs_n, star_button, stars,
 };
-use super::icons::{Icon, icon};
 use super::{App, Route, app, apply_theme, playback_settings, replay_gain};
 use crate::i18n::{t, tf};
 use crate::store::{Profile, Settings};
