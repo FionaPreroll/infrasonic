@@ -37,7 +37,6 @@ struct State {
     paused: bool,
     scheduled: bool,
     last_status: f64,
-    current: Option<usize>,
     buf: Vec<f32>,
 }
 
@@ -146,7 +145,6 @@ fn init(
             paused: false,
             scheduled: false,
             last_status: 0.0,
-            current: None,
             buf: vec![0.0; BLOCK],
         })
     });
@@ -257,14 +255,18 @@ fn feed(s: &mut State) {
 }
 
 fn start_downloads(s: &mut State) {
-    // Fetch the songs after the playing one early, so that the transition is gapless.
+    // Fetch the two songs after the playing one early, so that the transition is gapless,
+    // but one at a time: the next download starts when the song before it is in memory, so
+    // the playing song gets the whole connection (several players may share it).
     let snap = s.engine.snapshot();
-    if snap.current_index != s.current {
-        s.current = snap.current_index;
-        if let Some(i) = snap.current_index {
-            for e in snap.queue.iter().skip(i + 1).take(2) {
-                s.sources.want(&e.track.id);
+    if let Some(i) = snap.current_index {
+        let mut before = snap.queue.get(i).map(|e| e.track.id.as_str());
+        for e in snap.queue.iter().skip(i + 1).take(2) {
+            if !before.is_some_and(|id| s.sources.is_loaded(id)) {
+                break;
             }
+            s.sources.want(&e.track.id);
+            before = Some(&e.track.id);
         }
     }
     for (id, url) in s.sources.take_requests() {

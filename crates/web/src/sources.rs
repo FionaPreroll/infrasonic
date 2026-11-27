@@ -80,6 +80,11 @@ impl Sources {
         }
     }
 
+    /// Whether `id` is completely in memory.
+    pub fn is_loaded(&self, id: &str) -> bool {
+        matches!(self.inner.lock().songs.get(id), Some(State::Ready(_)))
+    }
+
     /// Forget a failed download so that it can be tried again.
     pub fn retry(&self, id: &str) {
         let mut g = self.inner.lock();
