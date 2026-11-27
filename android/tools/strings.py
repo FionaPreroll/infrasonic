@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Writes values/strings.xml (English) and values-de/strings.xml from the table below,
+so both languages always have the same keys. Run after changing a text."""
+from pathlib import Path
+from xml.sax.saxutils import escape
+
+S = {
+    # generic
+    "app_name": ("infrasonic", "infrasonic"),
+    "ok": ("OK", "OK"),
+    "cancel": ("Cancel", "Abbrechen"),
+    "retry": ("Try again", "Erneut versuchen"),
+    "more": ("More", "Mehr"),
+    "back": ("Back", "Zurück"),
+    "create": ("Create", "Erstellen"),
+    "save": ("Save", "Speichern"),
+    "edit": ("Edit", "Bearbeiten"),
+    "name": ("Name", "Name"),
+    "name_optional": ("Name (optional)", "Name (optional)"),
+    "rename": ("Rename", "Umbenennen"),
+    "delete": ("Delete", "Löschen"),
+    "remove": ("Remove", "Entfernen"),
+    "refresh": ("Refresh", "Aktualisieren"),
+    "share": ("Share", "Teilen"),
+    "copy_link": ("Copy link", "Link kopieren"),
+    "copied": ("Copied", "Kopiert"),
+    "off": ("Off", "Aus"),
+    "star": ("Add to favorites", "Zu Favoriten"),
+    "unstar": ("Remove from favorites", "Aus Favoriten entfernen"),
+    # playback
+    "play": ("Play", "Abspielen"),
+    "pause": ("Pause", "Pause"),
+    "next": ("Next", "Weiter"),
+    "previous": ("Previous", "Zurück"),
+    "shuffle": ("Shuffle", "Zufällig"),
+    "shuffle_all": ("Shuffle all", "Alles zufällig"),
+    "play_all": ("Play all", "Alle abspielen"),
+    "play_next": ("Play next", "Als Nächstes"),
+    "add_to_queue": ("Add to queue", "Zur Warteschlange"),
+    "radio": ("Radio", "Radio"),
+    "song_radio": ("Song radio", "Song-Radio"),
+    "repeat_off": ("Repeat off", "Wiederholen aus"),
+    "repeat_all": ("Repeat all", "Alle wiederholen"),
+    "repeat_one": ("Repeat song", "Titel wiederholen"),
+    "now_playing": ("Now playing", "Läuft gerade"),
+    "nothing_playing": ("Nothing playing", "Es läuft nichts"),
+    "lyrics": ("Lyrics", "Songtext"),
+    "no_lyrics": ("No lyrics for this song.", "Kein Songtext für diesen Titel."),
+    "queue_short": ("Queue", "Warteschlange"),
+    "queue_count": ("Queue: %1$d", "Warteschlange: %1$d"),
+    "queue_empty": ("The queue is empty.", "Die Warteschlange ist leer."),
+    "clear_queue": ("Clear queue", "Warteschlange leeren"),
+    "save_as_playlist": ("Save as playlist", "Als Playlist speichern"),
+    "playlist_saved": ("Saved as playlist \"%1$s\".", "Als Playlist „%1$s“ gespeichert."),
+    "move_up": ("Move up", "Nach oben"),
+    "move_down": ("Move down", "Nach unten"),
+    "add_bookmark": ("Bookmark this position", "Position merken"),
+    "bookmark_saved": ("Bookmark saved at %1$s.", "Lesezeichen bei %1$s gespeichert."),
+    # library
+    "albums": ("Albums", "Alben"),
+    "artists": ("Artists", "Künstler"),
+    "playlists": ("Playlists", "Playlists"),
+    "search": ("Search", "Suche"),
+    "search_hint": ("Artists, albums, songs", "Künstler, Alben, Titel"),
+    "songs": ("Songs", "Titel"),
+    "favorites": ("Favorites", "Favoriten"),
+    "genres": ("Genres", "Genres"),
+    "folders": ("Folders", "Ordner"),
+    "albums_newest": ("Newest", "Neu"),
+    "albums_recent": ("Recently played", "Zuletzt gehört"),
+    "albums_frequent": ("Most played", "Oft gehört"),
+    "albums_random": ("Random", "Zufällig"),
+    "albums_highest": ("Top rated", "Am besten bewertet"),
+    "albums_by_name": ("A–Z", "A–Z"),
+    "albums_by_artist": ("By artist", "Nach Künstler"),
+    "top_songs": ("Top songs", "Beliebte Titel"),
+    "biography": ("Biography", "Biografie"),
+    "no_albums": ("No albums.", "Keine Alben."),
+    "no_results": ("Nothing found.", "Nichts gefunden."),
+    "nothing_here": ("Nothing here.", "Hier ist nichts."),
+    "go_to_album": ("Go to album", "Zum Album"),
+    "go_to_artist": ("Go to artist", "Zum Künstler"),
+    # playlists
+    "add_to_playlist": ("Add to playlist", "Zur Playlist"),
+    "added_to": ("Added to \"%1$s\".", "Zu „%1$s“ hinzugefügt."),
+    "new_playlist": ("New playlist", "Neue Playlist"),
+    "no_playlists": ("No playlists yet.", "Noch keine Playlists."),
+    "remove_from_playlist": ("Remove from playlist", "Aus Playlist entfernen"),
+    "delete_playlist": ("Delete the playlist \"%1$s\"?", "Playlist „%1$s“ löschen?"),
+    # downloads
+    "download": ("Download", "Herunterladen"),
+    "downloads": ("Downloads", "Downloads"),
+    "downloading": ("Downloading songs", "Titel werden heruntergeladen"),
+    "remove_download": ("Remove download", "Download entfernen"),
+    "remove_all_downloads": ("Remove all", "Alle entfernen"),
+    "remove_all_downloads_confirm": ("Remove all downloaded songs from this device?", "Alle heruntergeladenen Titel von diesem Gerät entfernen?"),
+    "no_downloads": ("No downloaded songs. Use \"Download\" on a song, album or playlist to listen without a connection.", "Keine heruntergeladenen Titel. Mit „Herunterladen“ bei einem Titel, Album oder einer Playlist hörst du ohne Verbindung."),
+    "storage_usage": ("Downloads: %1$s · Cache: %2$s", "Downloads: %1$s · Cache: %2$s"),
+    # more
+    "podcasts": ("Podcasts", "Podcasts"),
+    "add_podcast": ("Add podcast", "Podcast hinzufügen"),
+    "feed_url": ("Feed URL", "Feed-URL"),
+    "no_podcasts": ("No podcasts on this server.", "Keine Podcasts auf diesem Server."),
+    "newest_episodes": ("Newest episodes", "Neueste Folgen"),
+    "delete_podcast": ("Delete the podcast \"%1$s\" from the server?", "Podcast „%1$s“ vom Server löschen?"),
+    "episode_status": ("on the server: %1$s", "auf dem Server: %1$s"),
+    "download_on_server": ("Download on the server", "Auf dem Server herunterladen"),
+    "episode_downloading": ("The server downloads the episode.", "Der Server lädt die Folge herunter."),
+    "bookmarks": ("Bookmarks", "Lesezeichen"),
+    "no_bookmarks": ("No bookmarks. Save one from the player.", "Keine Lesezeichen. Im Player kannst du eins setzen."),
+    "shares": ("Shares", "Freigaben"),
+    "no_shares": ("No shared links.", "Keine geteilten Links."),
+    "visits": ("%1$d visits", "%1$d Aufrufe"),
+    "expires": ("expires %1$s", "läuft ab am %1$s"),
+    "jukebox": ("Jukebox", "Jukebox"),
+    "jukebox_hint": ("Plays on the server's own speakers, not on this device.", "Spielt über die Lautsprecher des Servers, nicht auf diesem Gerät."),
+    "jukebox_take_queue": ("Send my queue to the jukebox", "Meine Warteschlange an die Jukebox"),
+    "start_scan": ("Scan library", "Bibliothek scannen"),
+    "scan_started": ("The server scans the library.", "Der Server scannt die Bibliothek."),
+    # connection and errors
+    "servers": ("Servers", "Server"),
+    "not_connected": ("Not connected to a server.", "Mit keinem Server verbunden."),
+    "not_supported": ("This server does not support that.", "Das unterstützt dieser Server nicht."),
+    "error_auth": ("Wrong user name or password.", "Benutzername oder Passwort falsch."),
+    "error_network": ("Server not reachable: %1$s", "Server nicht erreichbar: %1$s"),
+    "offline_banner": ("Offline: only downloaded songs", "Offline: nur heruntergeladene Titel"),
+    "connect_failed": ("Cannot log in to %1$s", "Anmeldung bei %1$s fehlgeschlagen"),
+    "connecting": ("Connecting to %1$s …", "Verbinde mit %1$s …"),
+    "state_online": ("Connected: %1$s", "Verbunden: %1$s"),
+    # servers
+    "welcome": ("Welcome! Add your Subsonic, Navidrome, gonic or Airsonic server.", "Willkommen! Trag deinen Subsonic-, Navidrome-, gonic- oder Airsonic-Server ein."),
+    "add_server": ("Add server", "Server hinzufügen"),
+    "edit_server": ("Edit server", "Server bearbeiten"),
+    "no_servers": ("No servers yet.", "Noch keine Server."),
+    "delete_server": ("Remove the server \"%1$s\" from this device?", "Server „%1$s“ von diesem Gerät entfernen?"),
+    "server_url": ("Server address", "Server-Adresse"),
+    "username": ("User name", "Benutzername"),
+    "password": ("Password", "Passwort"),
+    "password_unchanged": ("unchanged", "unverändert"),
+    "api_key": ("API key", "API-Schlüssel"),
+    "auth_token": ("Token", "Token"),
+    "auth_plain": ("Password", "Passwort"),
+    "auth_api_key": ("API key", "API-Schlüssel"),
+    "auth_token_hint": ("Sends a salted hash; the password is not stored. Works with most servers.", "Sendet einen gesalzenen Hash; das Passwort wird nicht gespeichert. Geht mit den meisten Servern."),
+    "auth_plain_hint": ("For servers that need the password itself (LDAP). It is stored on this device.", "Für Server, die das Passwort selbst brauchen (LDAP). Es wird auf dem Gerät gespeichert."),
+    "auth_api_key_hint": ("OpenSubsonic API key, for example from Navidrome.", "OpenSubsonic-API-Schlüssel, zum Beispiel aus Navidrome."),
+    "self_signed": ("Accept self-signed certificate", "Selbst signiertes Zertifikat akzeptieren"),
+    "self_signed_hint": ("Only for servers you run yourself.", "Nur für Server, die du selbst betreibst."),
+    "plain_http_warning": ("Without https, the login can be read on the network.", "Ohne https kann die Anmeldung im Netz mitgelesen werden."),
+    "test_connection": ("Test", "Testen"),
+    "test_ok": ("Works: %1$s", "Klappt: %1$s"),
+    # settings
+    "settings": ("Settings", "Einstellungen"),
+    "appearance": ("Appearance", "Darstellung"),
+    "theme": ("Theme", "Design"),
+    "theme_system": ("System", "System"),
+    "theme_light": ("Light", "Hell"),
+    "theme_dark": ("Dark", "Dunkel"),
+    "theme_black": ("Black (OLED)", "Schwarz (OLED)"),
+    "dynamic_color": ("Colors from wallpaper", "Farben vom Hintergrundbild"),
+    "dynamic_color_hint": ("Material You", "Material You"),
+    "language": ("Language", "Sprache"),
+    "language_system": ("System", "System"),
+    "quality": ("Quality", "Qualität"),
+    "bit_rate_wifi": ("Streaming over Wi-Fi", "Streaming über WLAN"),
+    "bit_rate_mobile": ("Streaming over mobile data", "Streaming über Mobilfunk"),
+    "bit_rate_download": ("Downloads", "Downloads"),
+    "original_quality": ("Original file", "Originaldatei"),
+    "same_as_wifi": ("Same as Wi-Fi", "Wie WLAN"),
+    "kbps": ("%1$d kbit/s", "%1$d kbit/s"),
+    "format": ("Format when converting", "Format beim Umwandeln"),
+    "format_server": ("Server default", "Wie der Server will"),
+    "format_hint": ("Only used when a bit rate limit applies.", "Nur bei begrenzter Bitrate."),
+    "playback": ("Playback", "Wiedergabe"),
+    "replay_gain": ("ReplayGain", "ReplayGain"),
+    "replay_gain_auto": ("Automatic (album when playing an album)", "Automatisch (Album, wenn ein Album läuft)"),
+    "replay_gain_off": ("Off", "Aus"),
+    "replay_gain_track": ("Track", "Titel"),
+    "replay_gain_album": ("Album", "Album"),
+    "replay_gain_preamp": ("Preamp: %1$s dB", "Vorverstärkung: %1$s dB"),
+    "prevent_clipping": ("Prevent clipping", "Übersteuern verhindern"),
+    "scrobble": ("Scrobble", "Scrobbeln"),
+    "scrobble_hint": ("Tell the server what you listened to.", "Dem Server mitteilen, was du gehört hast."),
+    "offline": ("Offline", "Offline"),
+    "offline_mode": ("Offline mode", "Offline-Modus"),
+    "offline_mode_hint": ("Only play downloaded songs, even with a connection.", "Nur heruntergeladene Titel spielen, auch mit Verbindung."),
+    "download_wifi_only": ("Download over Wi-Fi only", "Nur über WLAN herunterladen"),
+    "preload": ("Load ahead", "Vorladen"),
+    "preload_hint": ("Songs of the queue to load in advance.", "Titel der Warteschlange, die vorab geladen werden."),
+    "cache_size": ("Cache size", "Cache-Größe"),
+    "clear_cache": ("Clear cache", "Cache leeren"),
+    "clear_cache_confirm": ("Delete cached songs and covers? Downloads stay.", "Zwischengespeicherte Titel und Cover löschen? Downloads bleiben."),
+    "about": ("About", "Über"),
+    "about_text": ("Free software under the GPL 3.0. Core %1$s.", "Freie Software unter der GPL 3.0. Kern %1$s."),
+    # widget, Android Auto
+    "widget_description": ("Current song with controls", "Aktueller Titel mit Steuerung"),
+}
+
+P = {
+    "albums_count": ({"one": "%d album", "other": "%d albums"}, {"one": "%d Album", "other": "%d Alben"}),
+    "songs_count": ({"one": "%d song", "other": "%d songs"}, {"one": "%d Titel", "other": "%d Titel"}),
+}
+
+
+def esc(s: str) -> str:
+    s = escape(s).replace("'", "\\'").replace('"', '\\"')
+    return s
+
+
+def write(path: Path, lang: int) -> None:
+    out = ['<?xml version="1.0" encoding="utf-8"?>', "<!-- Generated by tools/strings.py; edit that file. -->", "<resources>"]
+    for k, v in S.items():
+        attr = ' translatable="false"' if k == "app_name" else ""
+        if k == "app_name" and lang:
+            continue
+        out.append(f'    <string name="{k}"{attr}>{esc(v[lang])}</string>')
+    for k, v in P.items():
+        out.append(f'    <plurals name="{k}">')
+        for q, t in v[lang].items():
+            out.append(f'        <item quantity="{q}">{esc(t)}</item>')
+        out.append("    </plurals>")
+    out.append("</resources>")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+res = Path(__file__).resolve().parent.parent / "app/src/main/res"
+write(res / "values/strings.xml", 0)
+write(res / "values-de/strings.xml", 1)

@@ -138,11 +138,40 @@ impl std::fmt::Debug for Infrasonic {
 
 fn join_error(e: tokio::task::JoinError) -> FfiError {
     FfiError::Other {
-        message: format!("task failed: {e}"),
+        reason: format!("task failed: {e}"),
     }
 }
 
 const MIB: u64 = 1024 * 1024;
+const SETTINGS_FILE: &str = "settings.json";
+const PROFILES_FILE: &str = "profiles.json";
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice(&bytes) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            tracing::warn!("ignoring {}: {e}", path.display());
+            None
+        }
+    }
+}
+
+/// Write a file atomically (temporary file + rename), creating its directory.
+fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+    let io = |e: std::io::Error| FfiError::Other {
+        reason: format!("cannot write {}: {e}", path.display()),
+    };
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(io)?;
+    }
+    let tmp = path.with_extension("json.part");
+    let bytes = serde_json::to_vec_pretty(value).map_err(|e| FfiError::Other {
+        reason: e.to_string(),
+    })?;
+    std::fs::write(&tmp, bytes).map_err(io)?;
+    std::fs::rename(&tmp, path).map_err(io)
+}
 
 impl Infrasonic {
     fn build(data_dir: String, cache_dir: String, output: Output) -> Result<Arc<Self>> {
@@ -152,17 +181,24 @@ impl Infrasonic {
             .enable_all()
             .build()
             .map_err(|e| FfiError::Other {
-                message: format!("cannot start runtime: {e}"),
+                reason: format!("cannot start runtime: {e}"),
             })?;
+        let data_dir: PathBuf = data_dir.into();
+        let settings = read_json(&data_dir.join(SETTINGS_FILE)).unwrap_or_default();
         Ok(Arc::new(Self {
             rt,
-            data_dir: data_dir.into(),
+            data_dir,
             cache_dir: cache_dir.into(),
             output,
             active: RwLock::new(None),
             listener: Arc::new(RwLock::new(None)),
-            settings: Mutex::new(PlaybackSettings::default()),
+            settings: Mutex::new(settings),
         }))
+    }
+
+    fn queue_file(&self) -> Option<PathBuf> {
+        let key = self.active.read().as_ref()?.profile.key();
+        Some(self.data_dir.join("queue").join(format!("{key}.json")))
     }
 
     /// Run a future on the runtime (reqwest needs Tokio; Kotlin polls the result).
@@ -273,10 +309,13 @@ impl Infrasonic {
         self.settings.lock().clone()
     }
 
-    /// Change settings. Quality, ReplayGain and the cache size apply right away; scrobbling
-    /// and preloading from the next connection on.
+    /// Change and save settings. Quality, ReplayGain and the cache size apply right away;
+    /// scrobbling and preloading from the next connection on.
     pub fn set_settings(&self, settings: PlaybackSettings) {
         let old = std::mem::replace(&mut *self.settings.lock(), settings.clone());
+        if let Err(e) = write_json(&self.data_dir.join(SETTINGS_FILE), &settings) {
+            tracing::warn!("{e}");
+        }
         let Ok(session) = self.session() else {
             return;
         };
@@ -314,6 +353,28 @@ impl Infrasonic {
             cache.evict();
             active.session.set_cache(Some(Arc::new(cache)));
         }
+    }
+
+    /// The saved servers.
+    pub fn profiles(&self) -> Vec<ServerProfile> {
+        read_json::<StoredProfiles>(&self.data_dir.join(PROFILES_FILE))
+            .unwrap_or_default()
+            .list
+    }
+
+    /// Id of the server to connect to on start.
+    pub fn active_profile_id(&self) -> Option<String> {
+        read_json::<StoredProfiles>(&self.data_dir.join(PROFILES_FILE))
+            .unwrap_or_default()
+            .active
+    }
+
+    /// Save the servers and the one in use.
+    pub fn save_profiles(&self, list: Vec<ServerProfile>, active: Option<String>) -> Result<()> {
+        write_json(
+            &self.data_dir.join(PROFILES_FILE),
+            &StoredProfiles { active, list },
+        )
     }
 
     /// Check a server without connecting the player.
@@ -405,6 +466,35 @@ impl Infrasonic {
         self.session()
             .map(|s| s.snapshot().queue.iter().map(QueueItem::from).collect())
             .unwrap_or_default()
+    }
+
+    /// Save the queue and position on the device (for resuming playback later).
+    pub fn save_local_queue(&self) -> Result<()> {
+        let s = self.session()?;
+        let Some(path) = self.queue_file() else {
+            return Err(FfiError::NotConnected);
+        };
+        let snap = s.snapshot();
+        let stored = StoredQueue {
+            songs: snap
+                .queue
+                .iter()
+                .map(|e| ss::Child::from(&Song::from(&e.track)))
+                .collect(),
+            index: snap.current_index.unwrap_or(0) as u32,
+            position: snap.position,
+        };
+        write_json(&path, &stored)
+    }
+
+    /// The queue last saved on the device for the connected server.
+    pub fn local_queue(&self) -> Option<SavedQueue> {
+        let q: StoredQueue = read_json(&self.queue_file()?)?;
+        (!q.songs.is_empty()).then(|| SavedQueue {
+            songs: songs(&q.songs),
+            index: q.index,
+            position: q.position,
+        })
     }
 
     /// Save the queue and position on the server.
@@ -925,7 +1015,7 @@ impl Infrasonic {
                 .map(PodcastChannel::from)
                 .ok_or(FfiError::Server {
                     code: 70,
-                    message: "podcast not found".into(),
+                    reason: "podcast not found".into(),
                 })
         })
         .await
@@ -1052,7 +1142,7 @@ impl Infrasonic {
     pub fn clear_cache(&self) -> Result<()> {
         if let Some(c) = self.cache() {
             c.clear().map_err(|e| FfiError::Other {
-                message: e.to_string(),
+                reason: e.to_string(),
             })?;
         }
         Ok(())

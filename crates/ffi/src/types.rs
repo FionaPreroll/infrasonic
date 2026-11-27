@@ -4,47 +4,48 @@
 use infrasonic_core::CoreError;
 use infrasonic_engine as engine;
 use infrasonic_subsonic as ss;
+use serde::{Deserialize, Serialize};
 
 /// Errors reported to Kotlin.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum FfiError {
     /// Wrong username, password or API key.
-    #[error("{message}")]
-    Auth { message: String },
+    #[error("{reason}")]
+    Auth { reason: String },
     /// The server refused the request (Subsonic error code).
-    #[error("{message}")]
-    Server { code: i32, message: String },
+    #[error("{reason}")]
+    Server { code: i32, reason: String },
     /// No connection, TLS failure, timeout or an HTTP error status.
-    #[error("{message}")]
-    Network { message: String },
+    #[error("{reason}")]
+    Network { reason: String },
     /// The server answered with something that is not a Subsonic response.
-    #[error("{message}")]
-    Protocol { message: String },
+    #[error("{reason}")]
+    Protocol { reason: String },
     /// The server does not offer this feature.
-    #[error("{message}")]
-    NotSupported { message: String },
+    #[error("{reason}")]
+    NotSupported { reason: String },
     /// A call that needs a server while none is connected.
     #[error("not connected to a server")]
     NotConnected,
-    #[error("{message}")]
-    Other { message: String },
+    #[error("{reason}")]
+    Other { reason: String },
 }
 
 impl From<ss::Error> for FfiError {
     fn from(e: ss::Error) -> Self {
-        let message = error_chain(&e);
+        let reason = error_chain(&e);
         if e.is_auth_error() {
-            return FfiError::Auth { message };
+            return FfiError::Auth { reason };
         }
         if e.is_not_supported() {
-            return FfiError::NotSupported { message };
+            return FfiError::NotSupported { reason };
         }
         match e {
-            ss::Error::Api { code, .. } => FfiError::Server { code, message },
-            ss::Error::Http(_) => FfiError::Network { message },
-            ss::Error::Url(_) => FfiError::Other { message },
+            ss::Error::Api { code, .. } => FfiError::Server { code, reason },
+            ss::Error::Http(_) => FfiError::Network { reason },
+            ss::Error::Url(_) => FfiError::Other { reason },
             ss::Error::Decode { .. } | ss::Error::MissingPayload { .. } => {
-                FfiError::Protocol { message }
+                FfiError::Protocol { reason }
             }
         }
     }
@@ -55,7 +56,7 @@ impl From<CoreError> for FfiError {
         match e {
             CoreError::Subsonic(e) => e.into(),
             CoreError::Config(e) => FfiError::Other {
-                message: e.to_string(),
+                reason: e.to_string(),
             },
         }
     }
@@ -79,7 +80,8 @@ fn error_chain(e: &dyn std::error::Error) -> String {
 pub type Result<T, E = FfiError> = std::result::Result<T, E>;
 
 /// How to log in.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerAuth {
     /// Salted token (`t`/`s`); the password itself is not stored. See [`token_auth`].
     Token {
@@ -137,7 +139,7 @@ pub fn token_auth(username: String, password: String) -> ServerAuth {
 }
 
 /// A configured server.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ServerProfile {
     /// Stable id chosen by the app.
     pub id: String,
@@ -843,7 +845,8 @@ impl From<infrasonic_core::SessionEvent> for PlayerEvent {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
 pub enum ReplayGainMode {
     Off,
     Track,
@@ -864,7 +867,7 @@ impl From<ReplayGainMode> for infrasonic_core::config::ReplayGainSetting {
 }
 
 /// Streaming quality: `max_bit_rate` in kbit/s, 0 for the original file.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Quality {
     pub max_bit_rate: u32,
     /// Transcoding format such as `opus` or `mp3`; `None` lets the server choose.
@@ -872,7 +875,8 @@ pub struct Quality {
 }
 
 /// Settings that apply to the next session; most can also be changed while connected.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
+#[serde(default)]
 pub struct PlaybackSettings {
     pub volume: u8,
     pub scrobble: bool,
@@ -949,4 +953,28 @@ pub enum ItemKind {
     Song,
     Album,
     Artist,
+}
+
+/// A queue saved on the device, to resume playback (e.g. from a Bluetooth headset).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SavedQueue {
+    pub songs: Vec<Song>,
+    pub index: u32,
+    /// Seconds.
+    pub position: f64,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct StoredQueue {
+    pub songs: Vec<ss::Child>,
+    pub index: u32,
+    pub position: f64,
+}
+
+/// `profiles.json`: the configured servers and the one in use.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct StoredProfiles {
+    pub active: Option<String>,
+    pub list: Vec<ServerProfile>,
 }

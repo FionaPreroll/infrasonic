@@ -4,7 +4,7 @@ A music player for [Subsonic](http://www.subsonic.org/pages/api.jsp) and
 [OpenSubsonic](https://opensubsonic.netlify.app/) servers such as Navidrome and gonic, written in
 Rust. It comes as a terminal player, the successor of
 [STMPS](https://github.com/spezifisch/stmps), and as a web player that runs the same engine in
-the browser. An Android app will follow.
+the browser, and as an Android app.
 
 infrasonic plays only what your server streams. It does not need mpv, VLC or any other external
 player: decoding (MP3, FLAC, Vorbis, Opus, AAC/ALAC, WAV/AIFF), resampling, gapless playback and
@@ -168,25 +168,39 @@ the player deploys it to GitHub Pages (https://fionapreroll.github.io/infrasonic
 | `crates/engine` | Playback engine: decoding with Symphonia and opus-decoder, rubato resampling, gapless queue, cpal output. Builds for WebAssembly and Android. |
 | `crates/core` | Configuration and profiles, HTTP streaming into the engine, audio cache and pinning, scrobbling, queue sync. |
 | `crates/tui` | The `infrasonic` terminal player (ratatui). |
-| `crates/headless` | `infrasonic-headless`, a player without UI. The Android prototype: the engine plays on the device, started from `adb shell`. |
+| `crates/headless` | `infrasonic-headless`, a player without UI, also for `adb shell` on Android. |
+| `crates/ffi` | Kotlin interface of the core for the Android app (UniFFI): sessions, library, playback, downloads, settings and servers. |
 | `crates/e2e` | End-to-end and soak tests against real servers. |
 | `crates/web` | The web player: page and audio worker (WebAssembly), assets in `www/`, container image in `docker/`. |
 | `vendor/opus-decoder` | opus-decoder 0.1.1 with a speed fix and an overflow fix, until they are released upstream. |
 
-## Android prototype
+## Android app
 
-The Android app comes later; for now `infrasonic-headless` shows that the engine plays on a phone
-(AAudio output, TLS with the system certificates). CI builds it for `aarch64-linux-android`
-(artifact `infrasonic-headless-aarch64-linux-android`, Android 8 or newer). With USB debugging on:
+`android/` holds the app (Kotlin, Jetpack Compose, Media3). The same Rust engine plays on the
+device through `crates/ffi` (UniFFI bindings). It has the library, playlists, search, lyrics,
+podcasts, bookmarks, shares and the server jukebox; downloads for offline use with separate bit
+rates for Wi-Fi, mobile data and downloads; notification, lock screen, Bluetooth resume, Android
+Auto with voice search and a home screen widget; several servers, self-signed certificates,
+Material You themes and English and German texts. Android 8 or newer.
 
 ```sh
-scripts/android-play.sh --bin ./infrasonic-headless --url https://me:secret@music.example.org --random 5
-scripts/android-play.sh --bin ./infrasonic-headless /sdcard/Music/song.flac
+android/gradlew -p android :app:assembleDebug -Pinfrasonic.abis=arm64-v8a   # needs the SDK, NDK 29, cargo-ndk
+scripts/e2e-servers.sh android/gradlew -p android :app:testDebugUnitTest   # Kotlin bindings against Navidrome and gonic
+scripts/android-device-test.sh                 # UI test on a running emulator, with screenshots
 ```
 
-It prints a status line per second (position, underruns, ReplayGain) and stops at the end of
-the queue or after `--seconds N`. The same binary runs on desktops, and `--null` discards the
-audio.
+`scripts/android-sdk.sh` installs the SDK packages, the pinned NDK, the Rust targets and
+cargo-ndk. Texts live in `android/tools/strings.py`, which writes both `strings.xml` files.
+
+Releases: a tag `android-vX.Y.Z` (matching `appVersion` in `android/app/build.gradle.kts`;
+versionCode is `X*10000 + Y*100 + Z`) builds the signed APK and AAB, rebuilds the APK unsigned
+in another directory and checks that both match apart from the signature, then publishes them
+with `SHA256SUMS` and build provenance (`gh attestation verify`). With the secret
+`PLAY_SERVICE_ACCOUNT_JSON` it also uploads to the Google Play internal track. Store texts are in
+`fastlane/metadata/android`, the F-Droid recipe draft in `android/fdroid`.
+
+`infrasonic-headless` still runs the engine without UI from `adb shell`
+(`scripts/android-play.sh`), handy for testing audio on a device.
 
 ## Development
 
@@ -203,7 +217,7 @@ scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ 
 
 The test music in `testdata/music` is generated (see `testdata/README.md`). CI runs formatting,
 clippy, tests on Linux, macOS and Windows, the end-to-end tests, the web player in Chromium, Firefox, WebKit and mobile Chromium, the Android
-build and `cargo deny`; fuzzing and a 30 minute soak run nightly.
+app (build, lint, Kotlin tests, emulator UI test) and `cargo deny`; fuzzing and a 30 minute soak run nightly.
 
 ## License
 

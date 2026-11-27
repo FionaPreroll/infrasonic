@@ -1,0 +1,33 @@
+infrasonic plays the music on your own Subsonic or OpenSubsonic server, such as Navidrome, gonic or Airsonic. The player engine is written in Rust and is the same one as in the infrasonic terminal and web players: gapless playback, exact ReplayGain and decoding on the device, without depending on Google services.
+
+<b>Library</b>
+<ul>
+<li>Album lists (newest, recently played, most played, random, top rated, A–Z), artists, genres and folders</li>
+<li>Search, favorites, ratings, top songs, artist and song radio</li>
+<li>Playlists: create, rename, add and remove songs, save the queue as a playlist</li>
+<li>Lyrics, synced lyrics follow the music</li>
+<li>Podcasts, bookmarks, shared links and the server's jukebox</li>
+</ul>
+
+<b>Offline</b>
+<ul>
+<li>Download songs, albums, playlists and artists for offline use</li>
+<li>Without a connection, the app plays what you downloaded</li>
+<li>Separate bit rates for Wi-Fi, mobile data and downloads</li>
+</ul>
+
+<b>On the phone and in the car</b>
+<ul>
+<li>Notification, lock screen, Bluetooth buttons and resuming from Bluetooth</li>
+<li>Android Auto with browsing and voice search</li>
+<li>Home screen widget</li>
+<li>Material You colors, light, dark and black themes, English and German</li>
+</ul>
+
+<b>Servers</b>
+<ul>
+<li>Several servers, token, password or API key login</li>
+<li>Self-signed certificates for servers you run yourself</li>
+</ul>
+
+infrasonic is free software under the GPL 3.0.

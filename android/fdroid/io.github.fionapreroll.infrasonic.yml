@@ -1,0 +1,46 @@
+# Draft for fdroiddata (metadata/io.github.fionapreroll.infrasonic.yml).
+# Before submitting: fill in AllowedAPKSigningKeys with the SHA-256 of the release certificate
+#   apksigner verify --print-certs infrasonic-android-X.Y.Z.apk | grep SHA-256
+Categories:
+  - Multimedia
+License: GPL-3.0-only
+SourceCode: https://github.com/FionaPreroll/infrasonic
+IssueTracker: https://github.com/FionaPreroll/infrasonic/issues
+Changelog: https://github.com/FionaPreroll/infrasonic/releases
+
+AutoName: infrasonic
+
+RepoType: git
+Repo: https://github.com/FionaPreroll/infrasonic.git
+# Reproducible build: F-Droid ships the APK signed by the developer when its own build matches.
+Binaries: https://github.com/FionaPreroll/infrasonic/releases/download/android-v%v/infrasonic-android-%v.apk
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 100
+    commit: android-v0.1.0
+    subdir: android/app
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-21-jdk-headless
+      - update-alternatives --auto java
+    output: build/outputs/apk/release/app-release-unsigned.apk
+    srclibs:
+      - rustup@1.28.2
+    build:
+      - $$rustup$$/rustup-init.sh -y --default-toolchain none --profile minimal
+      - source $HOME/.cargo/env
+      - cd ../..
+      - rustup show
+      - rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+      - cargo install cargo-ndk --version 4.1.2 --locked
+    ndk: 29.0.14206865
+    gradle:
+      - yes
+
+AllowedAPKSigningKeys: TODO
+
+AutoUpdateMode: Version android-v%v
+UpdateCheckMode: Tags ^android-v[0-9.]+$
+CurrentVersion: 0.1.0
+CurrentVersionCode: 100

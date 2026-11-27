@@ -9,3 +9,12 @@
 
 # Local compose settings (may hold a Tailscale auth key)
 crates/web/docker/.env
+
+# Android
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+*.keystore

@@ -1,0 +1,160 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Android release: on `android-vX.Y.Z` tags, build the signed APK and AAB, rebuild the APK
+# unsigned in another directory and check that both are the same apart from the signature
+# (the same check F-Droid makes), then publish them with checksums and build provenance.
+# A manual run without a tag only builds and checks reproducibility.
+name: Android release
+
+on:
+  push:
+    tags: ["android-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.kind }})
+    strategy:
+      matrix:
+        include:
+          - { kind: signed, dir: infrasonic }
+          # Another path and no signing key: what F-Droid and anyone else would build.
+          - { kind: rebuild, dir: elsewhere/src/infrasonic-rebuild }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ matrix.dir }}
+      - run: rustup show
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+      - name: SDK, NDK, Rust targets
+        run: scripts/android-sdk.sh
+      - name: Tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        run: |
+          want=${GITHUB_REF_NAME#android-v}
+          have=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' android/app/build.gradle.kts)
+          [ "$want" = "$have" ] || { echo "tag $GITHUB_REF_NAME but appVersion $have" >&2; exit 1; }
+      - name: Signing key
+        if: matrix.kind == 'signed'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            if [ "$GITHUB_REF_TYPE" = tag ]; then echo "secret ANDROID_KEYSTORE_BASE64 missing" >&2; exit 1; fi
+            echo "no signing key: building unsigned"; exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "INFRASONIC_KEYSTORE=$RUNNER_TEMP/release.jks"
+            echo "INFRASONIC_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "INFRASONIC_KEY_ALIAS=$KEY_ALIAS"
+            echo "INFRASONIC_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+          } >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          tasks=":app:assembleRelease"
+          [ "${{ matrix.kind }}" = signed ] && tasks="$tasks :app:bundleRelease"
+          android/gradlew -p android $tasks --console=plain --no-build-cache
+          v=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' android/app/build.gradle.kts)
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          apk=$(ls android/app/build/outputs/apk/release/*.apk)
+          suffix=""
+          [ -n "${INFRASONIC_KEYSTORE:-}" ] || suffix="-unsigned"
+          cp "$apk" "$GITHUB_WORKSPACE/out/infrasonic-android-$v$suffix.apk"
+          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
+            cp android/app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/out/infrasonic-android-$v.aab"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.kind }}
+          path: out/
+          retention-days: 30
+
+  verify:
+    name: Reproducible
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed
+          path: signed
+      - uses: actions/download-artifact@v4
+        with:
+          name: rebuild
+          path: rebuild
+      - name: Same APK apart from the signature
+        run: |
+          pip install --user apksigcopier==1.1.1
+          s=$(ls signed/*.apk) r=$(ls rebuild/*.apk)
+          case "$s" in
+            *-unsigned.apk) cmp "$s" "$r" ;;
+            *) apksigcopier compare "$s" --unsigned "$r" ;;
+          esac
+          echo "reproducible: $(sha256sum "$r")"
+
+  release:
+    name: Publish
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed
+          path: out
+      - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/infrasonic-android-*
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+
+  play:
+    name: Google Play (internal track)
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    runs-on: ubuntu-24.04
+    env:
+      PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/download-artifact@v4
+        if: env.PLAY_JSON != ''
+        with:
+          name: signed
+          path: out
+      - uses: r0adkll/upload-google-play@v1
+        if: env.PLAY_JSON != ''
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.github.fionapreroll.infrasonic
+          releaseFiles: out/*.aab
+          track: internal
+          status: completed
+      - if: env.PLAY_JSON == ''
+        run: echo "secret PLAY_SERVICE_ACCOUNT_JSON not set; skipping Google Play"

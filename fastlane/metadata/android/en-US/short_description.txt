@@ -1,0 +1,1 @@
+Music player for Subsonic, Navidrome and gonic servers, with offline playback

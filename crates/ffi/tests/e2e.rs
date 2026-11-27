@@ -87,6 +87,40 @@ fn errors_without_server() {
 }
 
 #[test]
+fn profiles_and_settings_are_saved() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let a = app(&dir, 1.0);
+    assert!(a.profiles().is_empty() && a.active_profile_id().is_none());
+    let p = profile(
+        "https://music.example.org",
+        token_auth("me".into(), "pw".into()),
+    );
+    let k = ServerProfile {
+        id: "k".into(),
+        auth: ServerAuth::ApiKey { key: "abc".into() },
+        allow_self_signed: true,
+        ..p.clone()
+    };
+    a.save_profiles(vec![p.clone(), k.clone()], Some("k".into()))
+        .expect("save");
+    let mut st = a.settings();
+    st.replay_gain = ReplayGainMode::Album;
+    st.pin_quality = Some(Quality {
+        max_bit_rate: 192,
+        format: Some("opus".into()),
+    });
+    a.set_settings(st.clone());
+    drop(a);
+
+    let b = app(&dir, 1.0);
+    assert_eq!(b.profiles(), vec![p, k]);
+    assert_eq!(b.active_profile_id().as_deref(), Some("k"));
+    assert_eq!(b.settings(), st);
+    let text = std::fs::read_to_string(dir.path().join("data/profiles.json")).expect("file");
+    assert!(!text.contains("\"pw\""), "password stored: {text}");
+}
+
+#[test]
 fn library_and_playback() {
     for s in servers() {
         let dir = tempfile::tempdir().expect("tmp");
@@ -183,6 +217,15 @@ fn library_and_playback() {
         let n = block(a.load_server_queue()).expect("load queue");
         assert_eq!(n as usize, album.songs.len(), "{}", s.name);
 
+        // Local queue for resuming playback.
+        rec.wait("restored queue", Duration::from_secs(10), |_| {
+            a.queue().len() == n as usize
+        });
+        a.save_local_queue().expect("save local queue");
+        let q = a.local_queue().expect("local queue");
+        assert_eq!(q.songs.len(), album.songs.len());
+        assert_eq!(q.songs[0].id, album.songs[0].id);
+
         // Bookmarks.
         block(a.create_bookmark(song.id.clone(), 1500, Some("here".into()))).expect("bookmark");
         let marks = block(a.bookmarks()).expect("bookmarks");
@@ -261,8 +304,8 @@ fn podcasts_jukebox_and_settings() {
         // gonic has podcasts (none in the test library), Navidrome answers 501.
         match block(a.podcasts(true)) {
             Ok(c) => assert!(c.is_empty(), "{}: {c:?}", s.name),
-            Err(FfiError::NotSupported { message }) => {
-                assert!(!message.contains("t="), "login data in {message}")
+            Err(FfiError::NotSupported { reason }) => {
+                assert!(!reason.contains("t="), "login data in {reason}")
             }
             Err(e) => panic!("{}: {e:?}", s.name),
         }

@@ -41,7 +41,7 @@ jobs:
             exit 0
           fi
           relevant=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" \
-            | grep -Ev '^(android/|fastlane/|crates/(ffi|tui|headless)/|\.github/workflows/(android|ci)\.yml$|LICENSE$)|\.md$' || true)
+            | grep -Ev '^(android/|fastlane/|scripts/android-|crates/(ffi|tui|headless)/|\.github/workflows/(android|ci)\.yml$|LICENSE$)|\.md$' || true)
           printf 'Changes that affect the web player:\n%s\n' "${relevant:-(none)}"
           if [ -n "$relevant" ]; then echo web=true; else echo web=false; fi >> "$GITHUB_OUTPUT"
 
