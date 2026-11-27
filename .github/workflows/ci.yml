@@ -145,6 +145,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # The host library (bindings, JVM tests) links ALSA through cpal.
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: SDK, NDK, Rust targets
         run: scripts/android-sdk.sh
       - name: Pull server images

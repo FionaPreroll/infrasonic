@@ -42,6 +42,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-disabled: true
+      # The host library (bindings, JVM tests) links ALSA through cpal.
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: SDK, NDK, Rust targets
         run: scripts/android-sdk.sh
       - name: Tag matches the app version

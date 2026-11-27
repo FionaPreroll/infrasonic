@@ -22,7 +22,7 @@ Builds:
     subdir: android/app
     sudo:
       - apt-get update
-      - apt-get install -y openjdk-21-jdk-headless
+      - apt-get install -y openjdk-21-jdk-headless libasound2-dev pkg-config
       - update-alternatives --auto java
     output: build/outputs/apk/release/app-release-unsigned.apk
     srclibs:
