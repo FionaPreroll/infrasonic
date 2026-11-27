@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -116,7 +117,7 @@ class AppTest {
 
         compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onAllNodesWithText("More")[0].performClick()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Settings").performScrollTo().tap()
         compose.waitUntilAtLeastOneExists(hasText("Theme"), 10_000)
         screenshot("5-settings")
     }
