@@ -22,7 +22,8 @@ X-Content-Type-Options = "nosniff"
 Referrer-Policy = "no-referrer"
 # No other site may show the player in a frame (clickjacking on the saved logins).
 X-Frame-Options = "DENY"
-Content-Security-Policy = "frame-ancestors 'none'"
+# As in index.html, and also for the audio worker; framing only works as a header.
+Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src * data:; media-src *; connect-src *; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 # Isolation from other sites' windows; "credentialless" keeps covers and streams from the
 # music server working (they come without cookies anyway).
 Cross-Origin-Opener-Policy = "same-origin"

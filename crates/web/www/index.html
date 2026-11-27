@@ -7,6 +7,10 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#7c4dff">
   <meta name="description" content="Music player for Subsonic and OpenSubsonic servers">
+  <!-- Only the player's own scripts run: no inline scripts, nothing from the music server
+       (whose texts, links and covers the page shows). Covers, streams and API calls may come
+       from any server, since the user picks it. Same policy in crates/web/docker/sws.toml. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src * data:; media-src *; connect-src *; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>infrasonic</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -16,12 +20,7 @@
   <link rel="preload" href="pkg/infrasonic-web_bg.wasm" as="fetch" type="application/wasm" crossorigin>
   <!-- Deployment presets (server address); the Docker image writes this file. -->
   <script src="config.js"></script>
-  <script type="module">
-    import init from './pkg/infrasonic-web.js';
-    init().catch((e) => {
-      document.body.textContent = 'infrasonic could not start: ' + e;
-    });
-  </script>
+  <script type="module" src="main.js"></script>
 </head>
 <body>
   <noscript>infrasonic needs JavaScript and WebAssembly.</noscript>

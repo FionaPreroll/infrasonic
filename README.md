@@ -191,6 +191,9 @@ scripts/android-device-test.sh                 # UI test on a running emulator, 
 
 `scripts/android-sdk.sh` installs the SDK packages, the pinned NDK, the Rust targets and
 cargo-ndk. Texts live in `android/tools/strings.py`, which writes both `strings.xml` files.
+Gradle checks every dependency and plugin against the SHA-256 sums in
+`android/gradle/verification-metadata.xml`. After changing a dependency, run
+`scripts/gradle-verification.sh` and commit the updated file together with the change.
 
 Two builds: `github` looks for new versions of itself if the user agrees (asked at the first
 start, Settings → Updates) and installs them; `store` is for Google Play and F-Droid, which bring
@@ -202,8 +205,9 @@ the signed GitHub build (`infrasonic.apk`) and its `version.json`, which the upd
 Its versionCode is 1000000 plus the number of commits, above every store build's.
 
 Releases: a tag `android-vX.Y.Z` (matching `appVersion` in `android/app/build.gradle.kts`;
-versionCode is `X*10000 + Y*100 + Z`) builds the store build as signed APK and AAB, rebuilds the APK unsigned
-in another directory and checks that both match apart from the signature, then publishes them
+versionCode is `X*10000 + Y*100 + Z`) builds the store build as unsigned APK and AAB, rebuilds the APK
+in another directory, signs APK and AAB in a job of their own (the signing key never meets Gradle
+or a build script) and checks that the signed APK is the rebuild apart from the signature, then publishes them
 with `SHA256SUMS` and build provenance (`gh attestation verify`). With the secret
 `PLAY_SERVICE_ACCOUNT_JSON` it also uploads to the Google Play internal track. Store texts are in
 `fastlane/metadata/android`, the F-Droid recipe draft in `android/fdroid`.
