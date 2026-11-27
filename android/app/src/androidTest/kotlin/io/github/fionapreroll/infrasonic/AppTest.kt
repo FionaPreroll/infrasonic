@@ -33,6 +33,8 @@ import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import org.junit.runner.RunWith
 import org.junit.runners.model.Statement
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * The app from the first start to playing an album, against a server on the host
@@ -104,10 +106,25 @@ class AppTest {
         screenshot("2-albums")
         compose.onAllNodesWithText("Sine Studies")[0].performClick()
         compose.waitUntilAtLeastOneExists(hasText("Low A"), 20_000)
+        // The album lasts 12 s and may be over before the UI is idle for the next check, so a
+        // thread of its own watches for a second of playback.
+        val played = AtomicBoolean(false)
+        val watcher = thread(name = "played") {
+            while (!played.get()) {
+                val s = Graph.player.state.value
+                if (s?.state == PlayState.PLAYING && Graph.player.positionNow() > 1.0) played.set(true)
+                try {
+                    Thread.sleep(50)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }
         compose.onAllNodesWithText("Play")[0].performClick()
-
-        compose.waitUntil(30_000) {
-            Graph.player.state.value?.state == PlayState.PLAYING && Graph.player.positionNow() > 1.0
+        try {
+            compose.waitUntil(30_000) { played.get() }
+        } finally {
+            watcher.interrupt()
         }
         screenshot("3-album")
         compose.onNodeWithTag("miniplayer").performClick()
