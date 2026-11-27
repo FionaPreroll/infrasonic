@@ -191,7 +191,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           changed=true
-          if git fetch --no-tags --depth=1 origin "+refs/tags/android-latest:refs/tags/android-latest" 2>/dev/null &&
+          # No --depth here: it would make the clone shallow and the build number too small.
+          if git fetch --no-tags origin "+refs/tags/android-latest:refs/tags/android-latest" 2>/dev/null &&
             git diff --quiet android-latest HEAD -- android crates vendor Cargo.toml Cargo.lock rust-toolchain.toml \
               ':(exclude)android/app/src/test' ':(exclude)android/app/src/androidTest' ':(exclude)android/fdroid' \
               ':(exclude)crates/e2e' ':(exclude)crates/web' ':(exclude)crates/tui' ':(exclude)crates/*/tests'; then
@@ -203,6 +204,9 @@ jobs:
       - name: GitHub build for android-latest (unsigned)
         if: steps.changed.outputs.changed == 'true'
         run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            echo "shallow clone: the build number would be wrong" >&2; exit 1
+          fi
           export INFRASONIC_BUILD=$(git rev-list --count HEAD) INFRASONIC_COMMIT=$GITHUB_SHA
           android/gradlew -p android :app:assembleGithubRelease --console=plain --no-build-cache
           mkdir -p out
@@ -276,11 +280,9 @@ jobs:
 
           Google Play and F-Droid get the tagged releases (\`android-vX.Y.Z\`), without the update check.
           NOTES
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
-          else
+          # Move the tag, or create it the first time.
+          gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true ||
             gh api --silent -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA"
-          fi
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" out/infrasonic.apk out/version.json --clobber -R "$GITHUB_REPOSITORY"
             gh release edit "$TAG" --title "infrasonic for Android (latest build)" --notes-file notes.md --latest=false -R "$GITHUB_REPOSITORY"
