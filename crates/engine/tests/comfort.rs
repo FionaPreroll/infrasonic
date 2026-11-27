@@ -182,8 +182,11 @@ fn crossfade_mixes_songs_and_keeps_the_timing() {
     let heard = r.heard_secs();
     assert!((heard - 3.0).abs() < 0.02, "heard {heard} s, not 2 + 2 - 1");
     let changed = changed_at.expect("second song");
+    // The event reaches the test a little after the output got there (the output runs three
+    // times faster than real time), so only the lower end is tight; counting from the end of
+    // the fade would put it at 2 s.
     assert!(
-        (changed - 1.0).abs() < 0.1,
+        (0.95..1.6).contains(&changed),
         "the second song counts from the start of the fade, not {changed} s"
     );
     let left = r.left();
