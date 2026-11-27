@@ -68,7 +68,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun ServersScreen() {
     val nav = LocalNav.current
-    val scope = rememberCoroutineScope()
     val profiles by Graph.servers.profiles.collectAsState()
     val active by Graph.servers.activeId.collectAsState()
     val connection by Graph.servers.connection.collectAsState()
@@ -84,7 +83,7 @@ fun ServersScreen() {
             items(profiles, key = { it.id }) { p ->
                 val isActive = p.id == active
                 ListItem(
-                    modifier = Modifier.clickable { scope.launch { Graph.servers.select(p.id) } },
+                    modifier = Modifier.clickable { Graph.scope.launch { Graph.servers.select(p.id) } },
                     leadingContent = { RadioButton(isActive, null) },
                     headlineContent = { Text(p.name) },
                     supportingContent = {
@@ -270,7 +269,8 @@ fun ServerEditScreen(id: String) {
                 Button(enabled = valid && !testing, onClick = {
                     val p = profile() ?: return@Button
                     Graph.servers.save(p)
-                    scope.launch {
+                    // Not the screen's scope: leaving the screen would cancel the connect.
+                    Graph.scope.launch {
                         if (first || Graph.servers.activeId.value == p.id) Graph.servers.select(p.id)
                     }
                     if (first) {

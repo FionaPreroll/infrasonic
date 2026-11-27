@@ -30,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +56,6 @@ private val cacheSizes = listOf(512, 1024, 2048, 4096, 8192, 16384)
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val prefs = Graph.prefs
     var core by remember { mutableStateOf(Graph.core.settings()) }
     fun update(f: (PlaybackSettings) -> PlaybackSettings) {
@@ -160,7 +158,7 @@ fun SettingsScreen() {
             SectionTitle(stringResource(R.string.offline))
             Toggle(stringResource(R.string.offline_mode), stringResource(R.string.offline_mode_hint), offline) {
                 prefs.offlineMode.value = it
-                scope.launch { Graph.servers.connectActive() }
+                Graph.scope.launch { Graph.servers.connectActive() }
             }
             Toggle(stringResource(R.string.download_wifi_only), null, wifiOnly) { prefs.downloadOnWifiOnly.value = it }
             Choice(
