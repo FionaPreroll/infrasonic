@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.fionapreroll.infrasonic
 
+import android.Manifest
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -19,7 +21,11 @@ import io.github.fionapreroll.infrasonic.ui.MainActivity
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestRule
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 
 /**
  * The app from the first start to playing an album, against a server on the host
@@ -29,13 +35,35 @@ import org.junit.runner.RunWith
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class AppTest {
-    @get:Rule
+    /** The notification permission dialog would cover the app (and take the window focus). */
+    @get:Rule(order = 0)
+    val notifications = TestRule { base, _ ->
+        object : Statement() {
+            override fun evaluate() {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    val inst = InstrumentationRegistry.getInstrumentation()
+                    inst.uiAutomation.grantRuntimePermission(inst.targetContext.packageName, Manifest.permission.POST_NOTIFICATIONS)
+                }
+                base.evaluate()
+            }
+        }
+    }
+
+    @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
+
+    /** What the screen showed when a step failed. */
+    @get:Rule(order = 2)
+    val onFailure = object : TestWatcher() {
+        override fun failed(e: Throwable?, description: Description?) {
+            runCatching { screenshot("failed") }
+        }
+    }
 
     private val server: String? = InstrumentationRegistry.getArguments().getString("server")
 
     private fun screenshot(name: String) {
-        compose.waitForIdle()
+        runCatching { compose.waitForIdle() }
         val bmp = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
         TestStorage().openOutputFile("screenshots/$name.png").use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
