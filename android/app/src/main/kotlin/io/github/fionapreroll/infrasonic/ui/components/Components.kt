@@ -106,8 +106,11 @@ fun Cover(id: String?, modifier: Modifier = Modifier, size: Int = 300, corner: D
 @Composable
 fun <T> Loader(vararg keys: Any?, load: suspend () -> T, content: @Composable (T, reload: () -> Unit) -> Unit) {
     var attempt by remember { mutableIntStateOf(0) }
-    val result by produceState<Result<T>?>(null, *keys, attempt) {
+    val server by Graph.servers.activeId.collectAsState()
+    val result by produceState<Result<T>?>(null, *keys, attempt, server) {
         value = null
+        // Right after the start or a server change the session is still connecting.
+        Graph.servers.awaitUsable()
         value = runCatching { load() }
     }
     val r = result

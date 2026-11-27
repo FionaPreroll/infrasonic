@@ -65,7 +65,7 @@ class AppTest {
     val onFailure = object : TestWatcher() {
         override fun failed(e: Throwable?, description: Description?) {
             runCatching { screenshot("failed") }
-            runCatching { compose.onAllNodes(isRoot()).printToLog("infrasonic") }
+            runCatching { compose.onAllNodes(isRoot()).printToLog("infrasonic", maxDepth = Int.MAX_VALUE) }
         }
     }
 

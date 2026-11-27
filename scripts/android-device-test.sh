@@ -23,7 +23,7 @@ if [ "$status" -ne 0 ]; then
   find app/build/outputs/androidTest-results -name '*.xml' -exec \
     sed -n '/<failure/,/<\/failure>/p' {} + | head -80 || true
   echo "--- logcat (app) ---"
-  adb logcat -d -v brief 'infrasonic:*' '*:S' | head -200 || true
+  adb logcat -d -v brief 'infrasonic:*' '*:S' | head -400 || true
   echo "--- logcat (crashes) ---"
   adb logcat -d -v brief 'AndroidRuntime:E' 'DEBUG:*' 'libc:*' '*:S' | tail -80 || true
 fi

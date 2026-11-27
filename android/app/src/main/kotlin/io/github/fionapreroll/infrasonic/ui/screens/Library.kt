@@ -118,12 +118,14 @@ fun HomeScreen() {
             }
             FilterChip(selected = false, onClick = { nav.navigate(Routes.GENRES) }, label = { Text(stringResource(R.string.genres)) })
         }
-        AlbumGrid(tab.kind, key = tab)
+        AlbumGrid(tab.kind, tab = tab)
     }
 }
 
 @Composable
-private fun AlbumGrid(kind: AlbumListKind, key: Any) {
+private fun AlbumGrid(kind: AlbumListKind, tab: Any) {
+    val server by Graph.servers.activeId.collectAsState()
+    val key = tab to server
     val albums = remember(key) { mutableStateListOf<Album>() }
     var end by remember(key) { mutableStateOf(false) }
     var error by remember(key) { mutableStateOf<Throwable?>(null) }
@@ -133,6 +135,8 @@ private fun AlbumGrid(kind: AlbumListKind, key: Any) {
     suspend fun more() {
         if (loading || end) return
         loading = true
+        // Right after the start or a server change the session is still connecting.
+        Graph.servers.awaitUsable()
         runCatching { Graph.core.albumList(kind, PAGE.toUInt(), albums.size.toUInt()) }
             .onSuccess { page ->
                 albums += page
