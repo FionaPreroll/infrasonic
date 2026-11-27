@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # The web player on port 8080 of this machine.
 #
+#   cp example.env .env   # then adjust .env
 #   docker compose -f compose.yml up -d
 #
 # Open http://<this machine>:8080/. Over plain HTTP (not localhost) browsers allow no
@@ -13,10 +14,10 @@ services:
   infrasonic-web:
     image: ghcr.io/fionapreroll/infrasonic-web:${INFRASONIC_TAG:-latest}
     ports:
-      - "8080:8080"
+      - "${INFRASONIC_PORT:-8080}:8080"
     environment:
       # Filled in on the login page (the field is hidden then); leave empty to type it in.
       # The page fetches from the server in the browser, so use an address the browser
       # reaches. A player served over HTTPS needs a server reachable over HTTPS.
-      INFRASONIC_SERVER: "http://192.168.1.10:4533"
+      INFRASONIC_SERVER: ${INFRASONIC_SERVER:-}
     restart: unless-stopped

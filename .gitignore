@@ -6,3 +6,6 @@
 /fuzz/coverage/
 /fuzz/target/
 /crates/web-spike/node_modules/
+
+# Local compose settings (may hold a Tailscale auth key)
+crates/web/docker/.env

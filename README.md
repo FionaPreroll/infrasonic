@@ -146,7 +146,8 @@ Compose examples are in [`crates/web/docker`](crates/web/docker):
 [`compose.yml`](crates/web/docker/compose.yml) serves the player on port 8080,
 [`compose.tailscale.yml`](crates/web/docker/compose.tailscale.yml) serves it at
 `https://infrasonic.<tailnet>.ts.net` through a Tailscale sidecar with a certificate.
-`INFRASONIC_TAG=snapshot` selects the snapshot image.
+Copy [`example.env`](crates/web/docker/example.env) to `.env` next to them for the server
+address, the image tag (`snapshot` follows `main`) and the Tailscale settings.
 
 | Variable | |
 |---|---|

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# The web player in your tailnet at https://infrasonic.<tailnet>.ts.net, with a certificate
+# The web player in your tailnet at https://<TS_HOSTNAME>.<tailnet>.ts.net, with a certificate
 # from Tailscale. The player shares the network of a Tailscale sidecar and publishes no port
 # on this machine.
 #
-#   TS_AUTHKEY=tskey-auth-... docker compose -f compose.tailscale.yml up -d
+#   cp example.env .env   # then set TS_AUTHKEY and INFRASONIC_SERVER in .env
+#   docker compose -f compose.tailscale.yml up -d
 #
 # Needs MagicDNS and HTTPS certificates turned on for the tailnet (admin console → DNS).
 # The auth key is only needed for the first start; the login is kept in the volume.
@@ -11,9 +12,11 @@
 services:
   tailscale:
     image: tailscale/tailscale:latest
-    hostname: infrasonic
+    hostname: ${TS_HOSTNAME:-infrasonic}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-}
+      # Log in with the key only when the volume holds no login yet.
+      TS_AUTH_ONCE: ${TS_AUTH_ONCE:-true}
       TS_STATE_DIR: /var/lib/tailscale
       TS_SERVE_CONFIG: /config/serve.json
       TS_USERSPACE: "false"
@@ -34,7 +37,7 @@ services:
     environment:
       # The page is served over HTTPS, so the browser only talks to a server over HTTPS:
       # e.g. Navidrome with its own `tailscale serve`, or behind a reverse proxy.
-      INFRASONIC_SERVER: "https://navidrome.example.ts.net"
+      INFRASONIC_SERVER: ${INFRASONIC_SERVER:-}
     restart: unless-stopped
 
 volumes:
