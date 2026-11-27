@@ -36,6 +36,9 @@ serde_json.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-android = "0.2"
+# The Java VM and app context for cpal's AAudio output (it asks the AudioManager).
+jni-sys = "0.4"
+ndk-context = "0.1"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
 
 [dev-dependencies]

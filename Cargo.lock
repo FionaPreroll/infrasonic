@@ -2287,6 +2287,8 @@ dependencies = [
  "infrasonic-e2e",
  "infrasonic-engine",
  "infrasonic-subsonic",
+ "jni-sys 0.4.1",
+ "ndk-context",
  "parking_lot",
  "serde",
  "serde_json",

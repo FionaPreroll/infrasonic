@@ -25,6 +25,6 @@ if [ "$status" -ne 0 ]; then
   echo "--- logcat (app) ---"
   adb logcat -d -v brief 'infrasonic:*' '*:S' | head -200 || true
   echo "--- logcat (crashes) ---"
-  adb logcat -d -v brief 'AndroidRuntime:E' '*:S' | tail -60 || true
+  adb logcat -d -v brief 'AndroidRuntime:E' 'DEBUG:*' 'libc:*' '*:S' | tail -80 || true
 fi
 exit "$status"

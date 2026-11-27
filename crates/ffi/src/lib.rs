@@ -9,6 +9,7 @@
 //! `cargo run -p infrasonic-ffi --features bindgen --bin uniffi-bindgen -- generate --library <libinfrasonic_ffi.so> --language kotlin --out-dir <dir>`
 //! (`android/build-rust.sh` does this and builds the libraries for all Android ABIs).
 
+mod android;
 mod app;
 mod types;
 
