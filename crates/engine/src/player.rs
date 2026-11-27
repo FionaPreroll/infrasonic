@@ -404,6 +404,10 @@ struct Segment {
     gain_db: Option<f32>,
 }
 
+/// How often the output may fail within [`RECOVERY_WINDOW`] and still be opened again.
+const MAX_RECOVERIES: usize = 3;
+const RECOVERY_WINDOW: Duration = Duration::from_secs(30);
+
 struct Worker {
     config: EngineConfig,
     provider: Arc<dyn SourceProvider>,
@@ -443,6 +447,8 @@ struct Worker {
     volume: u8,
     last_position_event: Instant,
     failures_in_row: usize,
+    /// When the output was opened again after the device failed (see `recover_output`).
+    recoveries: VecDeque<Instant>,
     /// Single-threaded mode: loader work goes to `deferred` instead of threads.
     pump: bool,
     deferred: VecDeque<Deferred>,
@@ -498,6 +504,7 @@ impl Worker {
             volume,
             last_position_event: Instant::now(),
             failures_in_row: 0,
+            recoveries: VecDeque::new(),
             pump: false,
             deferred: VecDeque::new(),
         }
@@ -1272,11 +1279,35 @@ impl Worker {
         }
     }
 
+    /// The output device went away or its stream must be built again (e.g. another sample
+    /// rate): open the output again, on the default device if that one is gone, and go on
+    /// where playback was. Gives up if the device keeps failing.
+    fn recover_output(&mut self) {
+        let now = Instant::now();
+        self.recoveries
+            .retain(|t| now.duration_since(*t) < RECOVERY_WINDOW);
+        let resume = self
+            .queue
+            .current_index()
+            .filter(|_| self.state != PlayState::Stopped);
+        let position = self.position;
+        self.stop_output();
+        match resume {
+            Some(index) if self.recoveries.len() < MAX_RECOVERIES => {
+                self.recoveries.push_back(now);
+                tracing::info!("audio output failed, opening it again at {position:.1} s");
+                self.play_index(index, position, self.want_pause);
+            }
+            _ => {
+                self.emit(Event::Error("audio device lost".into()));
+                self.stop();
+            }
+        }
+    }
+
     fn update_position(&mut self) {
         if self.producer.is_some() && self.shared.has_failed() {
-            self.emit(Event::Error("audio device lost".into()));
-            self.stop();
-            self.stop_output();
+            self.recover_output();
             return;
         }
         if self.shared.flush_pending() {

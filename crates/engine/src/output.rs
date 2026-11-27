@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use rtrb::{Consumer, Producer, RingBuffer};
+/// The engine's end of an output's ring buffer, for implementing [`OutputFactory`].
+pub use rtrb::Producer;
+use rtrb::{Consumer, RingBuffer};
 
 use crate::Error;
 
@@ -499,11 +501,18 @@ mod cpal_backend {
                     }
                 },
                 move |err| {
-                    tracing::warn!("audio output error: {err}");
-                    if !matches!(
+                    // Underruns and a refused real-time priority are not fatal, and on a change
+                    // of the default device cpal moves the stream itself (macOS). Everything
+                    // else makes the engine open the output again (`recover_output`).
+                    if matches!(
                         err.kind(),
-                        cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied
+                        cpal::ErrorKind::Xrun
+                            | cpal::ErrorKind::RealtimeDenied
+                            | cpal::ErrorKind::DeviceChanged
                     ) {
+                        tracing::debug!("audio output: {err}");
+                    } else {
+                        tracing::warn!("audio output error: {err}");
                         shared_err.mark_failed();
                     }
                 },

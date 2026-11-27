@@ -202,7 +202,7 @@ fn default_http_client(accept_invalid_certs: bool, streaming: bool) -> Result<re
         .user_agent(concat!("infrasonic/", env!("CARGO_PKG_VERSION")));
     #[cfg(not(target_arch = "wasm32"))]
     let b = if streaming {
-        b.read_timeout(std::time::Duration::from_secs(30))
+        b.read_timeout(std::time::Duration::from_secs(20))
     } else {
         b.timeout(std::time::Duration::from_secs(60))
     };

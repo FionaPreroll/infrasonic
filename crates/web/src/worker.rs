@@ -272,7 +272,7 @@ fn start_downloads(s: &mut State) {
     for (id, url) in s.sources.take_requests() {
         let sources = s.sources.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let result = download(&url).await;
+            let result = download_retrying(&url).await;
             if let Err(e) = &result {
                 post(&FromWorker::Error {
                     text: format!("download failed: {e}"),
@@ -284,15 +284,59 @@ fn start_downloads(s: &mut State) {
     }
 }
 
-async fn download(url: &str) -> Result<Vec<u8>, String> {
-    let js = |e: JsValue| e.as_string().unwrap_or_else(|| format!("{e:?}"));
+/// How long a download keeps trying after network errors (mobile connections drop and come
+/// back), in milliseconds, and the longest wait between two tries.
+const GIVE_UP_AFTER_MS: f64 = 90_000.0;
+const MAX_RETRY_MS: i32 = 8_000;
+
+/// Why a download did not deliver audio.
+enum Failure {
+    /// The network or the server for a moment: worth trying again.
+    Again(String),
+    /// The server refused or sent an error document.
+    Final(String),
+}
+
+async fn download_retrying(url: &str) -> Result<Vec<u8>, String> {
+    let start = js_sys::Date::now();
+    let mut delay = 500;
+    loop {
+        match download(url).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(Failure::Final(e)) => return Err(e),
+            Err(Failure::Again(e)) if js_sys::Date::now() - start > GIVE_UP_AFTER_MS => {
+                return Err(e);
+            }
+            Err(Failure::Again(_)) => {
+                sleep(delay).await;
+                delay = (delay * 2).min(MAX_RETRY_MS);
+            }
+        }
+    }
+}
+
+async fn sleep(ms: i32) {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        let _ = scope().set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
+    });
+    let _ = JsFuture::from(promise).await;
+}
+
+async fn download(url: &str) -> Result<Vec<u8>, Failure> {
+    let js = |e: JsValue| Failure::Again(e.as_string().unwrap_or_else(|| format!("{e:?}")));
     let resp: Response = JsFuture::from(scope().fetch_with_str(url))
         .await
         .map_err(js)?
         .dyn_into()
         .map_err(js)?;
     if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
+        let status = resp.status();
+        let msg = format!("HTTP {status}");
+        return Err(if status >= 500 || status == 408 || status == 429 {
+            Failure::Again(msg)
+        } else {
+            Failure::Final(msg)
+        });
     }
     let buf = JsFuture::from(resp.array_buffer().map_err(js)?)
         .await
@@ -300,7 +344,7 @@ async fn download(url: &str) -> Result<Vec<u8>, String> {
     let bytes = Uint8Array::new(&buf).to_vec();
     // Subsonic errors come back as a small JSON or XML body with status 200.
     if bytes.len() < 2048 && (bytes.starts_with(b"{") || bytes.starts_with(b"<?xml")) {
-        return Err(String::from_utf8_lossy(&bytes).into_owned());
+        return Err(Failure::Final(String::from_utf8_lossy(&bytes).into_owned()));
     }
     Ok(bytes)
 }

@@ -3,10 +3,13 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use infrasonic_engine::decode::TrackDecoder;
-use infrasonic_engine::output::{NullOutputFactory, OutputSpec};
+use infrasonic_engine::output::{
+    AudioOutput, NullOutputFactory, OutputFactory, OutputShared, OutputSpec, Producer,
+};
 use infrasonic_engine::source::StreamReader;
 use infrasonic_engine::{
     Command, Engine, EngineConfig, Error, Event, MediaSource, PlayState, RepeatMode, Track,
@@ -405,4 +408,75 @@ fn appending_after_queue_end_continues() {
         Duration::from_secs(5),
         |ev| matches!(ev, Event::TrackChanged(Some(t)) if t.track.title.contains("Middle A")),
     );
+}
+
+/// A [`NullOutputFactory`] that keeps the state of the stream it opened last, so a test can
+/// make the "device" fail, and counts how often it was opened.
+struct FlakyOutput {
+    inner: NullOutputFactory,
+    last: Arc<Mutex<Option<Arc<OutputShared>>>>,
+    opened: Arc<AtomicUsize>,
+}
+
+impl OutputFactory for FlakyOutput {
+    fn open(
+        &self,
+        shared: Arc<OutputShared>,
+        buffer: Duration,
+    ) -> Result<(Box<dyn AudioOutput>, Producer<f32>), Error> {
+        self.opened.fetch_add(1, Ordering::SeqCst);
+        *self.last.lock() = Some(shared.clone());
+        self.inner.open(shared, buffer)
+    }
+}
+
+#[test]
+fn lost_device_is_opened_again() {
+    let last = Arc::new(Mutex::new(None::<Arc<OutputShared>>));
+    let opened = Arc::new(AtomicUsize::new(0));
+    let out = FlakyOutput {
+        inner: NullOutputFactory::new(SPEC, 1.0),
+        last: last.clone(),
+        opened: opened.clone(),
+    };
+    let e = Engine::new(EngineConfig::default(), file_provider(), Box::new(out));
+    e.send(Command::SetQueue {
+        tracks: sine_album(),
+        start: 1,
+        position: 0.0,
+        play: true,
+    });
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::Position { position, .. } if *position > 1.0),
+    );
+    let fail = |last: &Mutex<Option<Arc<OutputShared>>>| {
+        if let Some(s) = last.lock().as_ref() {
+            s.mark_failed();
+        }
+    };
+    fail(&last);
+    // Playback goes on in the same track, from about where it was.
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::Position { position, .. } if *position > 2.0),
+    );
+    let snap = e.snapshot();
+    assert_eq!(snap.state, PlayState::Playing);
+    assert_eq!(snap.current_index, Some(1));
+    assert_eq!(opened.load(Ordering::SeqCst), 2);
+
+    // A device that keeps failing ends playback with an error.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut lost = false;
+    while Instant::now() < deadline && !lost {
+        fail(&last);
+        if let Ok(ev) = e.events().recv_timeout(Duration::from_millis(50)) {
+            lost = matches!(&ev, Event::Error(m) if m.contains("audio device lost"));
+        }
+    }
+    assert!(lost, "no error after repeated failures");
+    assert_eq!(opened.load(Ordering::SeqCst), 4);
 }
