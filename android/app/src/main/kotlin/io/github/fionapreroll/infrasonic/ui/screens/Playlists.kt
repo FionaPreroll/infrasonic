@@ -39,6 +39,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import io.github.fionapreroll.infrasonic.ui.searchAgain
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.SearchResult
 import io.github.fionapreroll.infrasonic.data.Graph
@@ -166,11 +170,19 @@ fun SearchScreen() {
             .onSuccess { result = it; error = null }
             .onFailure { error = it }
     }
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        searchAgain.collect {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
     Screen(stringResource(R.string.search), back = false) {
         OutlinedTextField(
             query,
             { query = it },
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focus),
             placeholder = { Text(stringResource(R.string.search_hint)) },
             singleLine = true,
         )

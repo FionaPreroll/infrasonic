@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.PlayArrow
@@ -126,6 +127,7 @@ fun MoreScreen() {
                     }
                 }
                 HorizontalDivider()
+                entry(Icons.Default.GraphicEq, R.string.equalizer) { nav.navigate(Routes.EQUALIZER) }
                 entry(Icons.Default.Dns, R.string.servers) { nav.navigate(Routes.SERVERS) }
                 entry(Icons.Default.Settings, R.string.settings) { nav.navigate(Routes.SETTINGS) }
             }

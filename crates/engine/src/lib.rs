@@ -16,6 +16,7 @@
 
 pub mod convert;
 pub mod decode;
+pub mod eq;
 pub mod gain;
 mod mp4edit;
 pub mod output;
@@ -23,6 +24,7 @@ mod player;
 pub mod queue;
 pub mod source;
 
+pub use eq::Equalizer;
 pub use gain::{ReplayGain, ReplayGainConfig, ReplayGainMode};
 pub use player::{Command, Engine, EngineConfig, Event, PlayState, Pump, Snapshot, SnapshotReader};
 pub use queue::{Queue, QueueEntry, RepeatMode};

@@ -2,9 +2,15 @@
 package io.github.fionapreroll.infrasonic.data
 
 import android.app.Application
+import android.content.Context
+import androidx.core.content.edit
 import io.github.fionapreroll.infrasonic.BuildConfig
+import io.github.fionapreroll.infrasonic.core.EqualizerSettings
 import io.github.fionapreroll.infrasonic.core.Infrasonic
 import io.github.fionapreroll.infrasonic.core.initLogging
+import io.github.fionapreroll.infrasonic.playback.AudioRoutes
+import io.github.fionapreroll.infrasonic.playback.EqStore
+import io.github.fionapreroll.infrasonic.playback.EqualizerManager
 import io.github.fionapreroll.infrasonic.playback.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +33,10 @@ object Graph {
         private set
     lateinit var network: NetworkQuality
         private set
+    lateinit var equalizer: EqualizerManager
+        private set
+    lateinit var routes: AudioRoutes
+        private set
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -45,6 +55,14 @@ object Graph {
         covers = Covers(app, core)
         servers = Servers(core, prefs, player)
         network = NetworkQuality(app, core, prefs, servers)
+        val eqPrefs = app.getSharedPreferences("equalizer", Context.MODE_PRIVATE)
+        val eqStore = object : EqStore {
+            override fun load() = eqPrefs.getString("state", null)
+            override fun save(json: String) = eqPrefs.edit { putString("state", json) }
+        }
+        equalizer = EqualizerManager(eqStore, { l -> core.setEqualizer(l?.let { EqualizerSettings(it.preamp, it.gains) }) })
+        routes = AudioRoutes(app) { equalizer.onDevice(it) }
+        routes.start()
         ready = true
         scope.launch { servers.connectActive() }
     }

@@ -332,3 +332,22 @@ fn podcasts_jukebox_and_settings() {
         assert!(lyrics.is_ok(), "{}: {lyrics:?}", s.name);
     }
 }
+
+#[test]
+fn equalizer_settings() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let a = app(&dir, 1.0);
+    assert_eq!(equalizer_bands().len(), 10);
+    assert_eq!(equalizer_max_gain_db(), 12.0);
+    assert_eq!(a.equalizer(), None);
+    let eq = EqualizerSettings {
+        preamp_db: -2.0,
+        gains_db: vec![6.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0],
+    };
+    // Works before a connection: the next session starts with it.
+    a.set_equalizer(Some(eq.clone()));
+    assert_eq!(a.equalizer(), Some(eq.clone()));
+    assert_eq!(equalizer_headroom_db(eq), -14.0, "16 kHz clamped to +12 dB");
+    a.set_equalizer(None);
+    assert_eq!(a.equalizer(), None);
+}

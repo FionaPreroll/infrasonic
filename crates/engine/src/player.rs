@@ -17,6 +17,7 @@ use rtrb::Producer;
 
 use crate::convert::{RateConverter, map_channels};
 use crate::decode::TrackDecoder;
+use crate::eq::Equalizer;
 use crate::gain::{ReplayGain, ReplayGainConfig, db_to_linear};
 use crate::output::{AudioOutput, OutputFactory, OutputShared, OutputSpec};
 use crate::queue::{Queue, QueueEntry, RepeatMode};
@@ -58,6 +59,8 @@ pub enum Command {
     SeekBy(f64),
     /// Volume 0–100.
     SetVolume(u8),
+    /// Switch the equalizer on with these settings, or off; heard at once.
+    SetEqualizer(Option<Equalizer>),
     /// Change ReplayGain settings (applies from the next decoded audio on).
     SetReplayGain(ReplayGainConfig),
     /// Update the metadata of all entries with this track id (e.g. after starring).
@@ -449,6 +452,7 @@ struct Worker {
     failures_in_row: usize,
     /// When the output was opened again after the device failed (see `recover_output`).
     recoveries: VecDeque<Instant>,
+    eq: Option<Equalizer>,
     /// Single-threaded mode: loader work goes to `deferred` instead of threads.
     pump: bool,
     deferred: VecDeque<Deferred>,
@@ -505,6 +509,7 @@ impl Worker {
             last_position_event: Instant::now(),
             failures_in_row: 0,
             recoveries: VecDeque::new(),
+            eq: None,
             pump: false,
             deferred: VecDeque::new(),
         }
@@ -653,6 +658,10 @@ impl Worker {
             }
             Command::Seek(t) => self.seek(t),
             Command::SeekBy(d) => self.seek(self.position + d),
+            Command::SetEqualizer(eq) => {
+                self.eq = eq;
+                self.shared.set_equalizer(self.eq.as_ref(), self.spec);
+            }
             Command::SetVolume(v) => {
                 self.volume = v.min(100);
                 self.shared.set_gain(volume_to_gain(self.volume));
@@ -734,6 +743,7 @@ impl Worker {
         match self.factory.open(self.shared.clone(), self.config.buffer) {
             Ok((out, producer)) => {
                 self.spec = out.spec();
+                self.shared.set_equalizer(self.eq.as_ref(), self.spec);
                 self.output = Some(out);
                 self.producer = Some(producer);
                 true
@@ -780,6 +790,9 @@ impl Worker {
             return;
         }
         self.reset_pipeline();
+        if position > 0.0 {
+            self.shared.request_fade_in();
+        }
         self.queue.set_current(Some(index));
         self.want_pause = paused;
         self.shared.set_paused(paused);
@@ -1150,6 +1163,7 @@ impl Worker {
             None
         };
         self.reset_pipeline();
+        self.shared.request_fade_in();
         self.position = to;
         self.set_state(PlayState::Buffering);
         self.emit_position();

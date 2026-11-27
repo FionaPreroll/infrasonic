@@ -15,6 +15,7 @@ pub use rtrb::Producer;
 use rtrb::{Consumer, RingBuffer};
 
 use crate::Error;
+use crate::eq::{EqProcessor, Equalizer};
 
 /// Format of the output stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +36,22 @@ pub struct OutputShared {
     underruns: AtomicU64,
     failed: AtomicBool,
     expect_audio: AtomicBool,
+    /// Equalizer filters; only the output callback touches them.
+    eq: Mutex<Option<EqProcessor>>,
+    /// New settings from the engine, which the callback takes up at its next buffer.
+    eq_next: Mutex<Option<(Option<Equalizer>, OutputSpec)>>,
+    eq_changed: AtomicBool,
+    /// Frames left to fade in, so a jump into the middle of a song (seek, reopened device)
+    /// does not click.
+    fade_in: AtomicU32,
+    /// The callback faded out for a pause and plays silence.
+    silent: AtomicBool,
+    /// The callback played audio on this stream.
+    heard: AtomicBool,
 }
+
+/// Length of a fade in or out, in frames (about 5 ms).
+const FADE_FRAMES: u32 = 256;
 
 impl Default for OutputShared {
     fn default() -> Self {
@@ -48,6 +64,12 @@ impl Default for OutputShared {
             underruns: AtomicU64::new(0),
             failed: AtomicBool::new(false),
             expect_audio: AtomicBool::new(false),
+            eq: Mutex::new(None),
+            eq_next: Mutex::new(None),
+            eq_changed: AtomicBool::new(false),
+            fade_in: AtomicU32::new(0),
+            silent: AtomicBool::new(false),
+            heard: AtomicBool::new(false),
         }
     }
 }
@@ -93,49 +115,171 @@ impl OutputShared {
     pub fn set_expect_audio(&self, v: bool) {
         self.expect_audio.store(v, Ordering::Release);
     }
+    /// Use `eq` (or none) for an output with this spec; the callback fades over to it.
+    pub fn set_equalizer(&self, eq: Option<&Equalizer>, spec: OutputSpec) {
+        *self.eq_next.lock() = Some((eq.copied(), spec));
+        self.eq_changed.store(true, Ordering::Release);
+    }
+
+    /// Run the equalizer over `out` (the callback's side of [`Self::set_equalizer`]). The
+    /// locks are never contended for long: the engine only holds `eq_next` to store settings.
+    fn equalize(&self, out: &mut [f32]) {
+        let Some(mut eq) = self.eq.try_lock() else {
+            return;
+        };
+        if self.eq_changed.load(Ordering::Acquire)
+            && let Some(mut next) = self.eq_next.try_lock()
+        {
+            self.eq_changed.store(false, Ordering::Release);
+            if let Some((settings, spec)) = next.take() {
+                let fits = eq
+                    .as_ref()
+                    .is_some_and(|p| p.fits(spec.sample_rate, spec.channels));
+                if !fits {
+                    // A new output: start with the settings, or fade to them if this stream
+                    // already played without an equalizer.
+                    let start = if self.heard.load(Ordering::Relaxed) {
+                        None
+                    } else {
+                        settings.as_ref()
+                    };
+                    *eq = Some(EqProcessor::new(start, spec.sample_rate, spec.channels));
+                }
+                if let Some(p) = eq.as_mut()
+                    && (fits || self.heard.load(Ordering::Relaxed))
+                {
+                    p.set(settings.as_ref());
+                }
+            }
+        }
+        if let Some(p) = eq.as_mut() {
+            p.process(out);
+        }
+    }
+
+    /// Fade in the next audio, after a flush that jumped into the middle of a song.
+    pub fn request_fade_in(&self) {
+        self.fade_in.store(FADE_FRAMES, Ordering::Relaxed);
+    }
+
+    fn fade_in(&self, out: &mut [f32], channels: usize) {
+        let left = self.fade_in.load(Ordering::Relaxed);
+        if left == 0 {
+            return;
+        }
+        let mut left = left;
+        for frame in out.chunks_exact_mut(channels) {
+            if left == 0 {
+                break;
+            }
+            let g = 1.0 - left as f32 / FADE_FRAMES as f32;
+            for s in frame {
+                *s *= g;
+            }
+            left -= 1;
+        }
+        self.fade_in.store(left, Ordering::Relaxed);
+    }
 }
 
-/// Fill `out` from the ring buffer. Called from the backend's audio callback.
+/// Fill `out` from the ring buffer. Called from the backend's audio callback. Returns how
+/// many frames at the start of `out` carry audio; the rest is silence.
+///
+/// Nothing stops abruptly: a pause and a flush (seek, new queue) first fade out the next few
+/// milliseconds of what is playing, and playback after a pause or a jump fades in.
 pub fn render(
     consumer: &mut Consumer<f32>,
     shared: &OutputShared,
     out: &mut [f32],
     channels: usize,
-) {
+) -> usize {
+    let channels = channels.max(1);
+    let paused = shared.paused.load(Ordering::Acquire);
     if shared.flush.load(Ordering::Acquire) {
+        let faded = if paused || shared.silent.load(Ordering::Relaxed) {
+            0
+        } else {
+            fade_out(consumer, shared, out, channels)
+        };
         let n = consumer.slots();
         if let Ok(chunk) = consumer.read_chunk(n) {
             chunk.commit_all();
         }
         shared.played_frames.store(0, Ordering::Release);
         shared.flush.store(false, Ordering::Release);
+        out[faded * channels..].fill(0.0);
+        return faded;
     }
-    if shared.paused.load(Ordering::Acquire) {
-        out.fill(0.0);
-        return;
+    if paused {
+        let faded = if shared.silent.swap(true, Ordering::Relaxed) {
+            0
+        } else {
+            let k = fade_out(consumer, shared, out, channels);
+            shared.played_frames.fetch_add(k as u64, Ordering::AcqRel);
+            k
+        };
+        out[faded * channels..].fill(0.0);
+        return faded;
     }
-    let gain = shared.gain();
-    let channels = channels.max(1);
-    let avail = consumer.slots() / channels * channels;
-    let n = avail.min(out.len() / channels * channels);
+    if shared.silent.swap(false, Ordering::Relaxed) {
+        shared.request_fade_in();
+    }
+    let n = take(consumer, shared, out, channels);
     if n > 0 {
-        if let Ok(chunk) = consumer.read_chunk(n) {
-            let (a, b) = chunk.as_slices();
-            for (o, s) in out.iter_mut().zip(a.iter().chain(b.iter())) {
-                *o = *s * gain;
-            }
-            chunk.commit_all();
-        }
-        shared
-            .played_frames
-            .fetch_add((n / channels) as u64, Ordering::AcqRel);
+        shared.fade_in(&mut out[..n * channels], channels);
+        shared.played_frames.fetch_add(n as u64, Ordering::AcqRel);
     }
-    if n < out.len() {
-        out[n..].fill(0.0);
+    if n * channels < out.len() {
+        out[n * channels..].fill(0.0);
         if shared.expect_audio.load(Ordering::Acquire) && n > 0 {
             shared.underruns.fetch_add(1, Ordering::Relaxed);
         }
     }
+    n
+}
+
+/// Move up to `out.len()` samples (whole frames) from the ring into `out`, with volume and
+/// equalizer. Returns the number of frames.
+fn take(
+    consumer: &mut Consumer<f32>,
+    shared: &OutputShared,
+    out: &mut [f32],
+    channels: usize,
+) -> usize {
+    let avail = consumer.slots() / channels * channels;
+    let n = avail.min(out.len() / channels * channels);
+    if n == 0 {
+        return 0;
+    }
+    let gain = shared.gain();
+    if let Ok(chunk) = consumer.read_chunk(n) {
+        let (a, b) = chunk.as_slices();
+        for (o, s) in out.iter_mut().zip(a.iter().chain(b.iter())) {
+            *o = *s * gain;
+        }
+        chunk.commit_all();
+    }
+    shared.equalize(&mut out[..n]);
+    shared.heard.store(true, Ordering::Relaxed);
+    n / channels
+}
+
+/// Play the next [`FADE_FRAMES`] (or what there is) fading to silence. Returns the frames.
+fn fade_out(
+    consumer: &mut Consumer<f32>,
+    shared: &OutputShared,
+    out: &mut [f32],
+    channels: usize,
+) -> usize {
+    let len = out.len().min(FADE_FRAMES as usize * channels);
+    let n = take(consumer, shared, &mut out[..len], channels);
+    for (i, frame) in out[..n * channels].chunks_exact_mut(channels).enumerate() {
+        let g = 1.0 - (i + 1) as f32 / FADE_FRAMES as f32;
+        for s in frame {
+            *s *= g;
+        }
+    }
+    n
 }
 
 /// A running output stream. Dropping it stops playback.
@@ -409,12 +553,9 @@ impl OutputFactory for NullOutputFactory {
                     .max(1);
                 let mut buf = vec![0.0f32; frames_per_tick * spec.channels];
                 while !stop2.load(Ordering::Acquire) {
-                    let before = shared.played_frames();
-                    render(&mut consumer, &shared, &mut buf, spec.channels);
+                    let audible = render(&mut consumer, &shared, &mut buf, spec.channels);
                     if let Some(c) = &capture {
-                        let after = shared.played_frames();
-                        let played = after.saturating_sub(before) as usize;
-                        c.lock().extend_from_slice(&buf[..played * spec.channels]);
+                        c.lock().extend_from_slice(&buf[..audible * spec.channels]);
                     }
                     std::thread::sleep(tick);
                 }
@@ -622,33 +763,63 @@ mod tests {
     }
 
     #[test]
-    fn paused_output_keeps_buffer() {
+    fn pause_fades_out_keeps_the_rest_and_fades_in_again() {
         let shared = OutputShared::default();
-        let (mut p, mut c) = RingBuffer::<f32>::new(4);
-        p.push(1.0).expect("push");
-        p.push(1.0).expect("push");
+        let (mut p, mut c) = RingBuffer::<f32>::new(2048);
+        for _ in 0..2048 {
+            p.push(1.0).expect("push");
+        }
         shared.set_paused(true);
-        let mut out = [9.0f32; 2];
+        let mut out = [9.0f32; 1024];
         render(&mut c, &shared, &mut out, 2);
-        assert_eq!(out, [0.0, 0.0]);
-        assert_eq!(c.slots(), 2);
-        assert_eq!(shared.played_frames(), 0);
+        // 256 frames fading to silence, then silence.
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        assert!(left[0] > 0.99 && left[255] < 0.01 && left[256..].iter().all(|s| *s == 0.0));
+        assert!(left[..256].windows(2).all(|w| w[1] <= w[0]));
+        assert_eq!(shared.played_frames(), 256);
+        // Paused: nothing more is taken.
+        render(&mut c, &shared, &mut out, 2);
+        assert!(out.iter().all(|s| *s == 0.0));
+        assert_eq!(c.slots(), 2048 - 512);
+        // Resumed: fades in.
+        shared.set_paused(false);
+        render(&mut c, &shared, &mut out, 2);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        assert!(left[0] < 0.01 && left[300] == 1.0);
+        assert!(left[..256].windows(2).all(|w| w[1] >= w[0]));
     }
 
     #[test]
-    fn flush_drops_buffer_and_resets_counter() {
+    fn flush_fades_out_drops_buffer_and_resets_counter() {
         let shared = OutputShared::default();
-        let (mut p, mut c) = RingBuffer::<f32>::new(8);
-        for _ in 0..8 {
+        let (mut p, mut c) = RingBuffer::<f32>::new(2048);
+        for _ in 0..2048 {
             p.push(1.0).expect("push");
         }
         let mut out = [0.0f32; 2];
         render(&mut c, &shared, &mut out, 2);
         assert_eq!(shared.played_frames(), 1);
         shared.request_flush();
+        let mut out = [9.0f32; 1024];
         render(&mut c, &shared, &mut out, 2);
-        assert_eq!(out, [0.0, 0.0]);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        assert!(left[0] > 0.99 && left[255] < 0.01 && left[256..].iter().all(|s| *s == 0.0));
+        assert_eq!(c.slots(), 0);
         assert_eq!(shared.played_frames(), 0);
         assert!(!shared.flush_pending());
+    }
+
+    #[test]
+    fn requested_fade_in() {
+        let shared = OutputShared::default();
+        let (mut p, mut c) = RingBuffer::<f32>::new(1024);
+        for _ in 0..1024 {
+            p.push(1.0).expect("push");
+        }
+        shared.request_fade_in();
+        let mut out = [0.0f32; 1024];
+        render(&mut c, &shared, &mut out, 2);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        assert!(left[0] < 0.01 && left[256] == 1.0 && left[511] == 1.0);
     }
 }

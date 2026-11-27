@@ -978,3 +978,36 @@ pub(crate) struct StoredProfiles {
     pub active: Option<String>,
     pub list: Vec<ServerProfile>,
 }
+
+/// Equalizer settings: a preamp and one gain per band of [`equalizer_bands`], in dB.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct EqualizerSettings {
+    pub preamp_db: f32,
+    /// Missing bands count as 0 dB, extra ones are ignored.
+    pub gains_db: Vec<f32>,
+}
+
+impl EqualizerSettings {
+    pub(crate) fn to_engine(&self) -> infrasonic_engine::Equalizer {
+        infrasonic_engine::Equalizer::new(self.preamp_db, &self.gains_db)
+    }
+}
+
+/// Center frequencies of the equalizer bands in Hz.
+#[uniffi::export]
+pub fn equalizer_bands() -> Vec<f32> {
+    infrasonic_engine::eq::BANDS.to_vec()
+}
+
+/// The largest boost or cut of a band (and of the preamp) in dB.
+#[uniffi::export]
+pub fn equalizer_max_gain_db() -> f32 {
+    infrasonic_engine::eq::MAX_GAIN_DB
+}
+
+/// The gain applied before the filters in dB: the preamp, lowered by the largest boost so
+/// that boosted bands cannot clip.
+#[uniffi::export]
+pub fn equalizer_headroom_db(settings: EqualizerSettings) -> f32 {
+    settings.to_engine().headroom_db()
+}

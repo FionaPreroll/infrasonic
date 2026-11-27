@@ -33,6 +33,7 @@ cpal = { workspace = true, optional = true }
 [dev-dependencies]
 proptest.workspace = true
 hound = "3.5"
+tempfile.workspace = true
 parking_lot.workspace = true
 
 [lints]

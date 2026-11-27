@@ -480,3 +480,29 @@ fn lost_device_is_opened_again() {
     assert!(lost, "no error after repeated failures");
     assert_eq!(opened.load(Ordering::SeqCst), 4);
 }
+
+#[test]
+fn equalizer_changes_what_is_heard() {
+    let rms = |eq: Option<infrasonic_engine::Equalizer>| {
+        let capture = Arc::new(Mutex::new(Vec::new()));
+        let e = engine(20.0, Some(capture.clone()));
+        e.send(Command::SetEqualizer(eq));
+        e.send(Command::SetQueue {
+            tracks: sine_album()[..1].to_vec(),
+            start: 0,
+            position: 0.0,
+            play: true,
+        });
+        wait_for(&e, Duration::from_secs(10), |ev| *ev == Event::QueueEnded);
+        let s = capture.lock();
+        let s = &s[s.len() / 4..s.len() * 3 / 4];
+        (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32).sqrt()
+    };
+    let plain = rms(None);
+    let cut = rms(Some(infrasonic_engine::Equalizer::new(0.0, &[-12.0; 10])));
+    let db = 20.0 * (cut / plain).log10();
+    assert!(
+        (db + 12.0).abs() < 1.5,
+        "equalizer changed the level by {db} dB"
+    );
+}

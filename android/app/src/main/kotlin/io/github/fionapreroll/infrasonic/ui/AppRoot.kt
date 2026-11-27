@@ -87,7 +87,9 @@ import io.github.fionapreroll.infrasonic.ui.screens.SearchScreen
 import io.github.fionapreroll.infrasonic.ui.screens.ServerEditScreen
 import io.github.fionapreroll.infrasonic.ui.screens.ServersScreen
 import io.github.fionapreroll.infrasonic.ui.screens.SettingsScreen
+import io.github.fionapreroll.infrasonic.ui.screens.EqualizerScreen
 import io.github.fionapreroll.infrasonic.ui.screens.SharesScreen
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("no navigation") }
@@ -107,6 +109,7 @@ object Routes {
     const val DOWNLOADS = "downloads"
     const val JUKEBOX = "jukebox"
     const val SETTINGS = "settings"
+    const val EQUALIZER = "equalizer"
     const val NEW_SERVER = "new"
     private fun e(s: String) = Uri.encode(s)
     fun server(id: String) = "server/${e(id)}"
@@ -127,6 +130,9 @@ private val tabs = listOf(
     Tab(Routes.SEARCH, R.string.search, Icons.Default.Search),
     Tab(Routes.MORE, R.string.more, Icons.Default.MoreHoriz),
 )
+
+/** The Search tab was tapped while it was open. */
+val searchAgain = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
 @Composable
 fun AppRoot() {
@@ -150,6 +156,8 @@ fun AppRoot() {
                                 NavigationBarItem(
                                     selected = route == t.route,
                                     onClick = {
+                                        // Tapping Search again goes to the search field.
+                                        if (route == t.route && t.route == Routes.SEARCH) searchAgain.tryEmit(Unit)
                                         nav.navigate(t.route) {
                                             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                                             launchSingleTop = true
@@ -189,6 +197,7 @@ fun AppRoot() {
                     composable(Routes.DOWNLOADS) { DownloadsScreen() }
                     composable(Routes.JUKEBOX) { JukeboxScreen() }
                     composable(Routes.SETTINGS) { SettingsScreen() }
+                    composable(Routes.EQUALIZER) { EqualizerScreen() }
                 }
             }
         }

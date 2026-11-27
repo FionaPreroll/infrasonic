@@ -124,6 +124,8 @@ pub struct Infrasonic {
     active: RwLock<Option<Active>>,
     listener: Listener,
     settings: Mutex<PlaybackSettings>,
+    /// The equalizer, if on. The app keeps presets and chooses one per output device.
+    equalizer: Mutex<Option<EqualizerSettings>>,
 }
 
 impl std::fmt::Debug for Infrasonic {
@@ -193,6 +195,7 @@ impl Infrasonic {
             active: RwLock::new(None),
             listener: Arc::new(RwLock::new(None)),
             settings: Mutex::new(settings),
+            equalizer: Mutex::new(None),
         }))
     }
 
@@ -261,6 +264,14 @@ impl Infrasonic {
                 .as_ref()
                 .map(|q| (q.max_bit_rate, q.format.clone())),
         );
+        let eq = self
+            .equalizer
+            .lock()
+            .as_ref()
+            .map(EqualizerSettings::to_engine);
+        if eq.is_some() {
+            session.send(Command::SetEqualizer(eq));
+        }
         forward_events(events, self.listener.clone());
         let old = self.active.write().replace(Active {
             profile,
@@ -353,6 +364,21 @@ impl Infrasonic {
             cache.evict();
             active.session.set_cache(Some(Arc::new(cache)));
         }
+    }
+
+    /// Turn the equalizer on with `settings`, or off with `None`. Changes fade over a few
+    /// milliseconds, so they can be made while playing. Not saved: the app sets it again
+    /// after a restart.
+    pub fn set_equalizer(&self, settings: Option<EqualizerSettings>) {
+        let eq = settings.as_ref().map(EqualizerSettings::to_engine);
+        *self.equalizer.lock() = settings;
+        if let Ok(session) = self.session() {
+            session.send(Command::SetEqualizer(eq));
+        }
+    }
+
+    pub fn equalizer(&self) -> Option<EqualizerSettings> {
+        self.equalizer.lock().clone()
     }
 
     /// The saved servers.

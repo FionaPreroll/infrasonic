@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lyrics
@@ -43,6 +44,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -90,7 +92,16 @@ fun NowPlayingScreen() {
     val st by Graph.player.state.collectAsState()
     var pane by rememberSaveable { mutableStateOf(Pane.Cover) }
     val item = st?.current
+    val nav = LocalNav.current
+    val eq by Graph.equalizer.state.collectAsState()
     Screen(stringResource(R.string.now_playing), actions = {
+        IconButton(onClick = { nav.navigate(Routes.EQUALIZER) }) {
+            Icon(
+                Icons.Default.GraphicEq,
+                stringResource(R.string.equalizer),
+                tint = if (eq.current.enabled) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+            )
+        }
         IconToggleButton(pane == Pane.Lyrics, { pane = if (it) Pane.Lyrics else Pane.Cover }) {
             Icon(Icons.Default.Lyrics, stringResource(R.string.lyrics))
         }

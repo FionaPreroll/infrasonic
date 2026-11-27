@@ -672,7 +672,11 @@ impl Player {
                 Command::UpdateTrack(t) => {
                     queue_changed |= e.queue.update_tracks(&t);
                 }
-                Command::Next | Command::SetReplayGain(_) | Command::Shutdown => {}
+                // The <audio> element plays the file as it is: no ReplayGain, no equalizer.
+                Command::Next
+                | Command::SetReplayGain(_)
+                | Command::SetEqualizer(_)
+                | Command::Shutdown => {}
             }
         });
         if is_next {
