@@ -108,6 +108,7 @@
  "settings.backend_engine": "infrasonic engine (gapless)",
  "settings.backend_hint": "The engine plays gapless with exact ReplayGain. The browser player works everywhere, also on iPhone in the background. Applies from the next song list.",
  "settings.backend_now": "Now:",
+ "settings.engine_needs_https": "The engine needs HTTPS (or localhost). Over plain HTTP the browser player is used, without gapless playback and offline start.",
  "settings.bitrate": "Maximum bit rate",
  "settings.dark": "Dark",
  "settings.format": "Format",

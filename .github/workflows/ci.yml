@@ -60,8 +60,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
-      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
-      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
+      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic -p infrasonic-headless -p infrasonic-ffi --tests
+      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless -p infrasonic-ffi --tests
 
   web:
     name: Web player (${{ matrix.browser }})
@@ -69,7 +69,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit, mobile]
+        # http-lan: Chromium with the player on a LAN address over plain HTTP.
+        browser: [chromium, firefox, webkit, mobile, http-lan]
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
@@ -88,7 +89,7 @@ jobs:
       - name: Playwright
         run: |
           npm install --no-save --prefix crates/web/tests playwright@1
-          b=${{ matrix.browser }}; [ "$b" = mobile ] && b=chromium
+          b=${{ matrix.browser }}; case "$b" in mobile|http-lan) b=chromium ;; esac
           npx --prefix crates/web/tests playwright install --with-deps "$b"
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
@@ -102,10 +103,11 @@ jobs:
           pactl set-default-sink null
       - name: Browser test against Navidrome and gonic
         run: |
-          python3 -m http.server 8098 --bind 127.0.0.1 --directory target/web &
-          b=${{ matrix.browser }}; flags=""
+          b=${{ matrix.browser }}; flags=""; host=127.0.0.1
           [ "$b" = mobile ] && b=chromium && flags=--mobile
-          scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ "$b" $flags
+          [ "$b" = http-lan ] && b=chromium && host=$(hostname -I | awk '{print $1}')
+          python3 -m http.server 8098 --bind "$host" --directory target/web &
+          scripts/e2e-servers.sh node crates/web/tests/browser.mjs "http://$host:8098/" "$b" $flags
 
   android:
     name: Android build

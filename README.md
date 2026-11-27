@@ -127,14 +127,26 @@ with the first song.
 
 Logins stay in the browser: with an API key (OpenSubsonic) no password is stored at all,
 otherwise a salted token. The player only talks to your server, which must allow cross-origin
-requests (Navidrome and gonic do) and, for a player served over HTTPS, be reachable over HTTPS.
+requests (Navidrome and gonic do). A player served over HTTPS, like the one on GitHub Pages,
+can only reach servers over HTTPS: browsers block plain `http://` requests from an HTTPS page,
+so a server at `http://192.168.…` in your home network needs a self-hosted player (below) or
+HTTPS. Over plain HTTP the browser allows no AudioWorklet, so the player falls back to the
+browser's audio element (no gapless playback, no offline start); HTTPS or `localhost` gets the
+full player.
 
-**Container image** (amd64 and arm64, static-web-server, runs as a non-root user):
+**Container image** (amd64 and arm64, static-web-server, runs as a non-root user). `:latest` is
+the latest release, `:snapshot` follows `main`.
 
 ```sh
 docker run -d -p 8080:8080 -e INFRASONIC_SERVER=https://music.example.org \
   ghcr.io/fionapreroll/infrasonic-web
 ```
+
+Compose examples are in [`crates/web/docker`](crates/web/docker):
+[`compose.yml`](crates/web/docker/compose.yml) serves the player on port 8080,
+[`compose.tailscale.yml`](crates/web/docker/compose.tailscale.yml) serves it at
+`https://infrasonic.<tailnet>.ts.net` through a Tailscale sidecar with a certificate.
+`INFRASONIC_TAG=snapshot` selects the snapshot image.
 
 | Variable | |
 |---|---|
@@ -143,9 +155,9 @@ docker run -d -p 8080:8080 -e INFRASONIC_SERVER=https://music.example.org \
 
 **Any web server**: `scripts/web.sh` builds the site into `target/web` (needs the
 `wasm32-unknown-unknown` target and `wasm-bindgen-cli` in the version of `Cargo.lock`);
-`scripts/web.sh --serve` serves it on http://127.0.0.1:8098. Every push to `main` deploys it to
-GitHub Pages (https://fionapreroll.github.io/infrasonic/); tags `web-v*` also publish the image
-to ghcr.io.
+`scripts/web.sh --serve` serves it on http://127.0.0.1:8098. Every push to `main` that changes
+the player deploys it to GitHub Pages (https://fionapreroll.github.io/infrasonic/) and publishes
+`:snapshot`; tags `web-v*` publish `:<version>` and `:latest`.
 
 ## Crates
 

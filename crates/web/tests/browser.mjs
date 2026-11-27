@@ -5,7 +5,8 @@
 //
 // Servers come from INFRASONIC_E2E_SERVERS ("navidrome=http://...;gonic=http://..."), as set
 // by scripts/e2e-servers.sh; the user is admin/admin. The player must be served from
-// 127.0.0.1 or localhost (no service worker there).
+// 127.0.0.1 or localhost (no service worker there), or from a LAN address over plain HTTP
+// (no service worker and no AudioWorklet there).
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const playwright = require("playwright");
@@ -267,6 +268,16 @@ for (const [name, server] of servers) {
       await row.waitFor();
       await row.locator('button:has-text("✕")').click();
       await row.waitFor({ state: "detached" });
+    });
+  }
+
+  if (!(await page.evaluate(() => isSecureContext))) {
+    // Plain HTTP in a home network: no AudioWorklet, so the page must have fallen back.
+    await step("plain HTTP falls back to the audio element", async () => {
+      await clickNav(page, "#/settings");
+      await page.waitForSelector(".hint.warn");
+      const t = await page.textContent("main");
+      if (!t.includes("audio element")) throw new Error("engine still active");
     });
   }
 

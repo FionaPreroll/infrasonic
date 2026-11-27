@@ -100,7 +100,13 @@ pub fn focus_search() {
 /// Copy text to the clipboard; show it either way, since the browser may refuse.
 pub fn copy_text(app: App, text: String) {
     let Some(w) = web_sys::window() else { return };
-    let promise = w.navigator().clipboard().write_text(&text);
+    // The clipboard API needs a secure context; over plain HTTP just show the link.
+    let nav = w.navigator();
+    if !w.is_secure_context() || !js_sys::Reflect::has(&nav, &"clipboard".into()).unwrap_or(false) {
+        app.info(tf("status.link", &[("url", &text)]));
+        return;
+    }
+    let promise = nav.clipboard().write_text(&text);
     wasm_bindgen_futures::spawn_local(async move {
         match wasm_bindgen_futures::JsFuture::from(promise).await {
             Ok(_) => app.info(tf("status.copied", &[("url", &text)])),

@@ -331,8 +331,15 @@ fn register_service_worker() {
     if host == "127.0.0.1" || host == "localhost" {
         return;
     }
-    let sw = w.navigator().service_worker();
-    let _ = sw.register("sw.js");
+    // Service workers need a secure context (HTTPS or localhost); over plain HTTP in a home
+    // network `navigator.serviceWorker` does not exist and the player runs without one.
+    let nav = w.navigator();
+    if !w.is_secure_context()
+        || !js_sys::Reflect::has(&nav, &"serviceWorker".into()).unwrap_or(false)
+    {
+        return;
+    }
+    let _ = nav.service_worker().register("sw.js");
 }
 
 #[component]

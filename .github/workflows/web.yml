@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Publishes the web player. Every push to main deploys it to GitHub Pages; tags web-v*
-# also publish the container image ghcr.io/fionapreroll/infrasonic-web (amd64, arm64).
+# Publishes the web player. Every push to main that touches it deploys it to GitHub Pages and
+# publishes the container image ghcr.io/fionapreroll/infrasonic-web:snapshot (amd64, arm64);
+# tags web-v* publish the image as :<version> and :latest. Pushes that only change e.g. the
+# Android app, the TUI or documentation skip both.
 name: Web player deploy
 
 on:
@@ -17,10 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Web player changed?
+    runs-on: ubuntu-24.04
+    outputs:
+      web: ${{ steps.diff.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          # Tags, manual runs and pushes without a usable base always build.
+          if [ "$EVENT" != push ] || [ "$REF_TYPE" = tag ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo web=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          relevant=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" \
+            | grep -Ev '^(android/|fastlane/|crates/(ffi|tui|headless)/|\.github/workflows/(android|ci)\.yml$|LICENSE$)|\.md$' || true)
+          printf 'Changes that affect the web player:\n%s\n' "${relevant:-(none)}"
+          if [ -n "$relevant" ]; then echo web=true; else echo web=false; fi >> "$GITHUB_OUTPUT"
+
   pages:
     name: GitHub Pages
+    needs: changes
     # The github-pages environment only accepts the default branch.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -50,7 +79,10 @@ jobs:
 
   image:
     name: Container image
-    if: startsWith(github.ref, 'refs/tags/web-v')
+    needs: changes
+    if: >-
+      startsWith(github.ref, 'refs/tags/web-v') ||
+      (github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true')
     runs-on: ubuntu-24.04
     permissions:
       packages: write
@@ -70,6 +102,7 @@ jobs:
           tags: |
             type=match,pattern=web-v(.*),group=1
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/web-v') }}
+            type=raw,value=snapshot,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-only
@@ -81,6 +114,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.ref_name }}
+          # Also names the service worker cache, so every snapshot gets a new one.
+          build-args: VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('snapshot-{0}', github.sha) }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

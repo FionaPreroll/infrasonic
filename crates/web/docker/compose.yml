@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The web player on port 8080 of this machine.
+#
+#   docker compose -f compose.yml up -d
+#
+# Open http://<this machine>:8080/. Over plain HTTP (not localhost) browsers allow no
+# AudioWorklet and no service worker, so the player uses the browser's own audio element:
+# everything works, but without gapless playback and offline start. For the full player use
+# HTTPS, e.g. with compose.tailscale.yml or a reverse proxy.
+#
+# INFRASONIC_TAG=snapshot follows the main branch; the default is the latest release.
+services:
+  infrasonic-web:
+    image: ghcr.io/fionapreroll/infrasonic-web:${INFRASONIC_TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      # Filled in on the login page (the field is hidden then); leave empty to type it in.
+      # The page fetches from the server in the browser, so use an address the browser
+      # reaches. A player served over HTTPS needs a server reachable over HTTPS.
+      INFRASONIC_SERVER: "http://192.168.1.10:4533"
+    restart: unless-stopped

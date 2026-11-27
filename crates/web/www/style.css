@@ -276,3 +276,4 @@ table.songs { width: 100%; border-collapse: collapse; }
   .head .big { width: 150px; height: 150px; }
   .songs .rating, .songs .num { display: none; }
 }
+.hint.warn { color: var(--danger); }

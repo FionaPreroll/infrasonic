@@ -1091,6 +1091,8 @@ fn settings() -> impl IntoView {
                 |s| s.backend.clone(), |s, v| s.backend = v,
                 |app, s| app.player.preferred.set(super::backend_kind(s)))}
             <p class="hint muted">{t("settings.backend_hint")} " " {t("settings.backend_now")} " " {backend_now}</p>
+            {(!super::player::BackendKind::engine_available())
+                .then(|| view! { <p class="hint warn">{t("settings.engine_needs_https")}</p> })}
             {select("settings.bitrate", "bitrate", bitrates,
                 |s| s.max_bit_rate.to_string(), |s, v| s.max_bit_rate = v.parse().unwrap_or(0), playback)}
             {select("settings.format", "format", vec![

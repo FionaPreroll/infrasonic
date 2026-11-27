@@ -108,6 +108,7 @@
  "settings.backend_engine": "infrasonic-Engine (lückenlos)",
  "settings.backend_hint": "Die Engine spielt lückenlos mit genauem ReplayGain. Der Browser-Player läuft überall, auch auf dem iPhone im Hintergrund. Gilt ab der nächsten Titelliste.",
  "settings.backend_now": "Gerade:",
+ "settings.engine_needs_https": "Die Engine braucht HTTPS (oder localhost). Über einfaches HTTP spielt der Browser-Player, ohne lückenlose Wiedergabe und Offline-Start.",
  "settings.bitrate": "Maximale Bitrate",
  "settings.dark": "Dunkel",
  "settings.format": "Format",

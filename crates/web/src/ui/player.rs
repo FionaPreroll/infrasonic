@@ -32,18 +32,24 @@ pub enum BackendKind {
 }
 
 impl BackendKind {
+    /// Whether the browser can run the engine: AudioWorklet needs a secure context (HTTPS or
+    /// localhost), so a player opened over plain HTTP in a home network cannot.
+    pub fn engine_available() -> bool {
+        let Some(w) = web_sys::window() else {
+            return false;
+        };
+        // Some browsers define `AudioWorkletNode` even where `audioWorklet` is missing.
+        w.is_secure_context()
+            && Reflect::get(&w, &"AudioWorkletNode".into()).is_ok_and(|v| !v.is_undefined())
+    }
+
     /// The engine where the browser can run it well; the `<audio>` element on iOS.
     pub fn auto() -> Self {
-        let window = web_sys::window();
-        let worklet = window
-            .as_ref()
-            .and_then(|w| Reflect::get(w, &"AudioWorkletNode".into()).ok())
-            .is_some_and(|v| !v.is_undefined());
-        let ua = window
+        let ua = web_sys::window()
             .and_then(|w| w.navigator().user_agent().ok())
             .unwrap_or_default();
         let ios = ua.contains("iPhone") || ua.contains("iPad");
-        if worklet && !ios {
+        if Self::engine_available() && !ios {
             Self::Engine
         } else {
             Self::Element
@@ -293,6 +299,11 @@ impl Player {
 
     /// Make `kind` the active backend, stopping the other one.
     fn switch_to(&self, kind: BackendKind) {
+        let kind = if kind == BackendKind::Engine && !BackendKind::engine_available() {
+            BackendKind::Element
+        } else {
+            kind
+        };
         let current = self.active.get_untracked();
         if current == Some(kind) {
             return;
