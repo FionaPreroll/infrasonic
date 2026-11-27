@@ -820,10 +820,11 @@ pub enum PlayerEvent {
     },
 }
 
-impl From<infrasonic_core::SessionEvent> for PlayerEvent {
-    fn from(e: infrasonic_core::SessionEvent) -> Self {
+impl PlayerEvent {
+    /// The event for the app, if it is one the app hears about.
+    pub(crate) fn from_session(e: infrasonic_core::SessionEvent) -> Option<Self> {
         use infrasonic_core::SessionEvent as S;
-        match e {
+        Some(match e {
             S::Engine(ev) => match ev {
                 engine::Event::StateChanged(s) => Self::StateChanged { state: s.into() },
                 engine::Event::TrackChanged(e) => Self::TrackChanged {
@@ -837,11 +838,13 @@ impl From<infrasonic_core::SessionEvent> for PlayerEvent {
                 engine::Event::RepeatChanged(r) => Self::RepeatChanged { repeat: r.into() },
                 engine::Event::QueueEnded => Self::QueueEnded,
                 engine::Event::Error(message) => Self::Error { message },
+                // Kept by the library itself.
+                engine::Event::ResumePoint { .. } => return None,
             },
             S::Scrobbled { id } => Self::Scrobbled { id },
             S::Pinned { id } => Self::Pinned { id },
             S::Error(message) => Self::Error { message },
-        }
+        })
     }
 }
 
@@ -891,6 +894,12 @@ pub struct PlaybackSettings {
     pub cache_mb: u64,
     /// Songs after the next one that are downloaded in advance.
     pub preload_songs: u32,
+    /// Seconds over which songs fade into each other; 0 plays them gaplessly. Songs that
+    /// follow each other on an album always play gaplessly.
+    pub crossfade_secs: f32,
+    /// Tracks at least this many minutes long (podcasts, audio books) start where they were
+    /// left; 0 turns it off.
+    pub resume_after_minutes: u32,
 }
 
 impl Default for PlaybackSettings {
@@ -909,6 +918,8 @@ impl Default for PlaybackSettings {
             prevent_clipping: true,
             cache_mb: 2048,
             preload_songs: 2,
+            crossfade_secs: 0.0,
+            resume_after_minutes: 15,
         }
     }
 }
@@ -920,6 +931,11 @@ pub fn default_playback_settings() -> PlaybackSettings {
 }
 
 impl PlaybackSettings {
+    /// The engine's resume setting.
+    pub(crate) fn resume_min_duration(&self) -> Option<f64> {
+        (self.resume_after_minutes > 0).then(|| f64::from(self.resume_after_minutes) * 60.0)
+    }
+
     pub(crate) fn to_config(&self) -> infrasonic_core::config::PlaybackConfig {
         infrasonic_core::config::PlaybackConfig {
             volume: self.volume.min(100),

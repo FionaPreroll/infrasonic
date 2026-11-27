@@ -23,6 +23,7 @@ pub mod output;
 mod player;
 pub mod queue;
 pub mod source;
+pub mod tempo;
 
 pub use eq::Equalizer;
 pub use gain::{ReplayGain, ReplayGainConfig, ReplayGainMode};

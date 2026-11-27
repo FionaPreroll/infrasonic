@@ -471,7 +471,7 @@ impl Player {
                 }
                 s.current = entry;
             }),
-            Event::QueueChanged | Event::QueueEnded => {}
+            Event::QueueChanged | Event::QueueEnded | Event::ResumePoint { .. } => {}
         }
     }
 
@@ -672,10 +672,15 @@ impl Player {
                 Command::UpdateTrack(t) => {
                     queue_changed |= e.queue.update_tracks(&t);
                 }
-                // The <audio> element plays the file as it is: no ReplayGain, no equalizer.
+                // The <audio> element plays the file as it is: no ReplayGain, no equalizer, no
+                // crossfade; the web player has no speed, sleep timer or resume points.
                 Command::Next
                 | Command::SetReplayGain(_)
                 | Command::SetEqualizer(_)
+                | Command::SetSpeed(_)
+                | Command::SetCrossfade(_)
+                | Command::PauseAfterCurrent(_)
+                | Command::SetResume { .. }
                 | Command::Shutdown => {}
             }
         });

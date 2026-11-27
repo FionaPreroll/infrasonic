@@ -61,6 +61,20 @@ pub enum Command {
     SetVolume(u8),
     /// Switch the equalizer on with these settings, or off; heard at once.
     SetEqualizer(Option<Equalizer>),
+    /// Playback speed (0.5–3), at the same pitch; heard at once.
+    SetSpeed(f32),
+    /// Fade songs into each other over this many seconds (0 = off). Songs that follow each
+    /// other on an album stay gapless.
+    SetCrossfade(f32),
+    /// Pause at the end of the current song (at the start of the next one), or not.
+    PauseAfterCurrent(bool),
+    /// Remember where long tracks (at least `min_duration` seconds) were left and start them
+    /// there again; `points` are the positions remembered so far, by track id. `None` turns
+    /// it off.
+    SetResume {
+        min_duration: Option<f64>,
+        points: Vec<(String, f64)>,
+    },
     /// Change ReplayGain settings (applies from the next decoded audio on).
     SetReplayGain(ReplayGainConfig),
     /// Update the metadata of all entries with this track id (e.g. after starring).
@@ -99,6 +113,11 @@ pub enum Event {
     QueueEnded,
     /// A recoverable problem, e.g. a track that could not be decoded.
     Error(String),
+    /// Where a long track was left (`None`: from the start again), for frontends to keep.
+    ResumePoint {
+        id: String,
+        position: Option<f64>,
+    },
 }
 
 /// A consistent view of the engine state.
@@ -127,6 +146,8 @@ pub struct EngineConfig {
     pub preload_next: bool,
     pub volume: u8,
     pub replay_gain: ReplayGainConfig,
+    /// Crossfade between songs in seconds; 0 plays gaplessly.
+    pub crossfade: f32,
 }
 
 impl Default for EngineConfig {
@@ -136,8 +157,49 @@ impl Default for EngineConfig {
             preload_next: true,
             volume: 100,
             replay_gain: ReplayGainConfig::default(),
+            crossfade: 0.0,
         }
     }
+}
+
+/// The longest crossfade in seconds.
+pub const MAX_CROSSFADE: f32 = 12.0;
+
+/// Resume points closer than this to the start or the end are not kept.
+const RESUME_MARGIN: f64 = 10.0;
+/// How often the resume point of a playing track is updated.
+const RESUME_EVERY: Duration = Duration::from_secs(15);
+
+/// Whether `b` follows `a` on the same album, so that a crossfade would cut into music that
+/// is meant to run on (live albums, DJ mixes, classical works).
+fn album_continues(a: &Track, b: &Track) -> bool {
+    let key = |t: &Track| {
+        t.album_id
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| (!t.album.is_empty()).then(|| t.album.clone()))
+    };
+    let (ka, kb) = (key(a), key(b));
+    if ka.is_none() || ka != kb {
+        return false;
+    }
+    match (a.track_number, b.track_number) {
+        (Some(x), Some(y)) => {
+            let (da, db) = (a.disc_number.unwrap_or(1), b.disc_number.unwrap_or(1));
+            (da == db && y == x + 1) || (db == da + 1 && y == 1)
+        }
+        // Without numbers, the same album next to each other counts as continuing.
+        _ => true,
+    }
+}
+
+/// The end of one song being mixed into the start of the next.
+struct Mix {
+    /// Samples of the old song (output channels, input rate).
+    tail: Vec<f32>,
+    /// Frames mixed so far and in all.
+    pos: usize,
+    frames: usize,
 }
 
 /// Handle to the engine thread.
@@ -434,7 +496,7 @@ struct Worker {
     generation: u64,
     active: Option<Active>,
     /// Decoder for the next track, opened in advance.
-    preloaded: Option<(u64, TrackDecoder)>,
+    preloaded: Option<(u64, TrackDecoder, f64)>,
     /// uid of a preload that is in flight.
     preloading: Option<u64>,
     /// After the active track ended: uid we are waiting for.
@@ -453,6 +515,17 @@ struct Worker {
     /// When the output was opened again after the device failed (see `recover_output`).
     recoveries: VecDeque<Instant>,
     eq: Option<Equalizer>,
+    speed: f32,
+    /// The last `crossfade` seconds of the active track, held back for a crossfade.
+    tail: Vec<f32>,
+    tail_rate: u32,
+    mixing: Option<Mix>,
+    pause_after: bool,
+    /// After `pause_after`: the queue index to open paused once the song ended.
+    pause_at: Option<usize>,
+    resume_min: Option<f64>,
+    resume: std::collections::HashMap<String, f64>,
+    last_resume: Instant,
     /// Single-threaded mode: loader work goes to `deferred` instead of threads.
     pump: bool,
     deferred: VecDeque<Deferred>,
@@ -510,6 +583,15 @@ impl Worker {
             failures_in_row: 0,
             recoveries: VecDeque::new(),
             eq: None,
+            speed: 1.0,
+            tail: Vec::new(),
+            tail_rate: 0,
+            mixing: None,
+            pause_after: false,
+            pause_at: None,
+            resume_min: None,
+            resume: std::collections::HashMap::new(),
+            last_resume: Instant::now(),
             pump: false,
             deferred: VecDeque::new(),
         }
@@ -549,6 +631,7 @@ impl Worker {
             // Handle bursts of commands before doing audio work.
             while let Ok(c) = self.rx.try_recv() {
                 if c == Command::Shutdown {
+                    self.remember();
                     self.stop_output();
                     return;
                 }
@@ -558,6 +641,7 @@ impl Worker {
             self.update_position();
             self.publish();
         }
+        self.remember();
         self.stop_output();
     }
 
@@ -662,6 +746,34 @@ impl Worker {
                 self.eq = eq;
                 self.shared.set_equalizer(self.eq.as_ref(), self.spec);
             }
+            Command::SetSpeed(speed) => {
+                self.speed = crate::tempo::clamp_speed(speed);
+                self.shared.set_speed(self.speed, self.spec);
+            }
+            Command::SetCrossfade(secs) => {
+                self.config.crossfade = if secs.is_finite() {
+                    secs.clamp(0.0, MAX_CROSSFADE)
+                } else {
+                    0.0
+                };
+                if self.config.crossfade == 0.0 {
+                    self.flush_tail();
+                }
+            }
+            Command::PauseAfterCurrent(on) => {
+                self.pause_after = on;
+                if on {
+                    // A crossfade would already play the next song.
+                    self.flush_tail();
+                }
+            }
+            Command::SetResume {
+                min_duration,
+                points,
+            } => {
+                self.resume_min = min_duration.filter(|d| d.is_finite() && *d > 0.0);
+                self.resume = points.into_iter().collect();
+            }
             Command::SetVolume(v) => {
                 self.volume = v.min(100);
                 self.shared.set_gain(volume_to_gain(self.volume));
@@ -693,7 +805,7 @@ impl Worker {
     fn after_queue_edit(&mut self) {
         self.touch_queue();
         let expected = self.expected_next_uid();
-        if let Some((uid, _)) = &self.preloaded
+        if let Some((uid, _, _)) = &self.preloaded
             && Some(*uid) != expected
         {
             self.preloaded = None;
@@ -744,6 +856,7 @@ impl Worker {
             Ok((out, producer)) => {
                 self.spec = out.spec();
                 self.shared.set_equalizer(self.eq.as_ref(), self.spec);
+                self.shared.set_speed(self.speed, self.spec);
                 self.output = Some(out);
                 self.producer = Some(producer);
                 true
@@ -779,6 +892,10 @@ impl Worker {
         self.preloading = None;
         self.waiting_next = None;
         self.end_of_queue = false;
+        self.tail.clear();
+        self.mixing = None;
+        self.pause_at = None;
+        self.shared.set_input_ended(false);
     }
 
     fn play_index(&mut self, index: usize, position: f64, paused: bool) {
@@ -789,6 +906,14 @@ impl Worker {
             self.stop();
             return;
         }
+        if self.state != PlayState::Stopped {
+            self.remember();
+        }
+        let position = if position > 0.0 {
+            position
+        } else {
+            self.resume_point(&entry.track).unwrap_or(0.0)
+        };
         self.reset_pipeline();
         if position > 0.0 {
             self.shared.request_fade_in();
@@ -962,17 +1087,21 @@ impl Worker {
                     Ok(dec) => {
                         if waiting {
                             self.waiting_next = None;
-                            self.activate(l.uid, dec, 0.0);
+                            // A crossfade that waited for this song.
+                            let fade = !self.tail.is_empty() && dec.sample_rate() == self.tail_rate;
+                            self.start_mix(fade);
+                            self.activate(l.uid, dec, l.start);
                             self.preload();
                         } else {
                             self.preloading = None;
-                            self.preloaded = Some((l.uid, dec));
+                            self.preloaded = Some((l.uid, dec, l.start));
                         }
                     }
                     Err(e) => {
                         self.preloading = None;
                         if waiting {
                             self.waiting_next = None;
+                            self.flush_tail();
                             self.emit(Event::Error(e.to_string()));
                             // Skip the broken track once it would have started.
                             if let Some(idx) = self.queue.index_of(l.uid)
@@ -1079,7 +1208,8 @@ impl Worker {
             .cloned()
         {
             self.preloading = Some(next);
-            self.spawn_open(e, Purpose::Next, 0.0);
+            let start = self.resume_point(&e.track).unwrap_or(0.0);
+            self.spawn_open(e, Purpose::Next, start);
         }
     }
 
@@ -1091,7 +1221,8 @@ impl Worker {
             .cloned()
         {
             self.waiting_next = Some(uid);
-            self.spawn_open(e, Purpose::Next, 0.0);
+            let start = self.resume_point(&e.track).unwrap_or(0.0);
+            self.spawn_open(e, Purpose::Next, start);
         }
     }
 
@@ -1121,6 +1252,9 @@ impl Worker {
     }
 
     fn pause(&mut self, p: bool) {
+        if p {
+            self.remember();
+        }
         self.want_pause = p;
         self.shared.set_paused(p);
         match self.state {
@@ -1131,6 +1265,9 @@ impl Worker {
     }
 
     fn stop(&mut self) {
+        if self.state != PlayState::Stopped {
+            self.remember();
+        }
         self.reset_pipeline();
         self.want_pause = false;
         self.shared.set_paused(false);
@@ -1249,7 +1386,34 @@ impl Worker {
                     if a.gain != 1.0 {
                         scratch.iter_mut().for_each(|x| *x *= a.gain);
                     }
-                    pipe.feed(ch, &scratch);
+                    let chunk_rate = chunk.rate;
+                    if let Some(m) = &mut self.mixing {
+                        mix_in(m, &mut scratch, ch);
+                        if m.pos >= m.frames {
+                            self.mixing = None;
+                        }
+                    }
+                    let hold = if self.config.crossfade > 0.0 && !self.pause_after {
+                        (f64::from(self.config.crossfade) * f64::from(chunk_rate)) as usize
+                    } else {
+                        0
+                    };
+                    if hold > 0 {
+                        // Keep the last `hold` frames back for a crossfade into the next song.
+                        self.tail_rate = chunk_rate;
+                        self.tail.extend_from_slice(&scratch);
+                        let excess = (self.tail.len() / ch).saturating_sub(hold) * ch;
+                        if excess > 0 {
+                            pipe.feed(ch, &self.tail[..excess]);
+                            self.tail.drain(..excess);
+                        }
+                    } else {
+                        if !self.tail.is_empty() {
+                            pipe.feed(ch, &self.tail);
+                            self.tail.clear();
+                        }
+                        pipe.feed(ch, &scratch);
+                    }
                     pipe.scratch = scratch;
                 }
                 Ok(None) => a.done = true,
@@ -1267,19 +1431,48 @@ impl Worker {
         let Some(a) = self.active.take() else {
             return;
         };
-        let next = self
+        if let Some(m) = self.mixing.take() {
+            // The new song ended before the old one faded out: let the old one finish.
+            let ch = self.spec.channels.max(1);
+            let mut rest = vec![0.0; (m.frames - m.pos) * ch];
+            let mut m = m;
+            mix_in(&mut m, &mut rest, ch);
+            self.tail.extend_from_slice(&rest);
+        }
+        let next_index = self
             .queue
             .index_of(a.uid)
-            .and_then(|i| self.queue.next_index(Some(i), true))
-            .and_then(|n| self.queue.get(n))
-            .map(|e| e.uid);
+            .and_then(|i| self.queue.next_index(Some(i), true));
+        let next = next_index.and_then(|n| self.queue.get(n)).map(|e| e.uid);
+        if self.pause_after
+            && let Some(n) = next_index
+        {
+            // Sleep timer: end here and open the next song paused once this one is heard.
+            self.pause_after = false;
+            self.flush_tail();
+            self.pause_at = Some(n);
+            self.end_of_queue = true;
+            return;
+        }
         let Some(next) = next else {
+            self.flush_tail();
             self.end_of_queue = true;
             return;
         };
+        let fade = !self.tail.is_empty() && !self.continues_album(a.uid, next);
+        match &self.preloaded {
+            Some((uid, dec, _)) if *uid == next => {
+                let rate = dec.sample_rate();
+                self.start_mix(fade && rate == self.tail_rate);
+            }
+            // Still loading: keep the end back until the next song is there (or the output
+            // is about to run dry, see `update_position`).
+            _ if fade && self.preloading == Some(next) => {}
+            _ => self.flush_tail(),
+        }
         match self.preloaded.take() {
-            Some((uid, dec)) if uid == next => {
-                self.activate(uid, dec, 0.0);
+            Some((uid, dec, start)) if uid == next => {
+                self.activate(uid, dec, start);
                 self.preload();
             }
             _ => {
@@ -1291,6 +1484,92 @@ impl Worker {
                 }
             }
         }
+    }
+
+    /// Mix the held back end of the last song into the next one, or write it as it is.
+    fn start_mix(&mut self, fade: bool) {
+        if fade && !self.tail.is_empty() {
+            // The next song starts where the held back end of this one starts.
+            let ch = self.spec.channels.max(1);
+            let tail = std::mem::take(&mut self.tail);
+            self.mixing = Some(Mix {
+                frames: tail.len() / ch,
+                tail,
+                pos: 0,
+            });
+        } else {
+            self.flush_tail();
+        }
+    }
+
+    /// Write the held back end of the active song as it is (no crossfade follows).
+    fn flush_tail(&mut self) {
+        if !self.tail.is_empty() {
+            let ch = self.spec.channels.max(1);
+            let tail = std::mem::take(&mut self.tail);
+            self.pipe.feed(ch, &tail);
+        }
+    }
+
+    fn continues_album(&self, a: u64, b: u64) -> bool {
+        let track = |uid| {
+            self.queue
+                .index_of(uid)
+                .and_then(|i| self.queue.get(i))
+                .map(|e| &e.track)
+        };
+        match (track(a), track(b)) {
+            (Some(x), Some(y)) => album_continues(x, y),
+            _ => false,
+        }
+    }
+
+    /// Where `track` should start: its resume point, if it is long enough to have one.
+    fn resume_point(&self, track: &Track) -> Option<f64> {
+        let min = self.resume_min?;
+        if track.duration.is_some_and(|d| d < min) {
+            return None;
+        }
+        self.resume.get(&track.id).copied()
+    }
+
+    /// Keep the position of the current track if it is a long one (or forget it near the
+    /// start and the end), and tell the frontend.
+    fn remember(&mut self) {
+        self.last_resume = Instant::now();
+        let Some(min) = self.resume_min else {
+            return;
+        };
+        let Some(entry) = self
+            .current_uid
+            .and_then(|u| self.queue.index_of(u))
+            .and_then(|i| self.queue.get(i))
+        else {
+            return;
+        };
+        let Some(duration) = self.duration.or(entry.track.duration) else {
+            return;
+        };
+        if duration < min {
+            return;
+        }
+        let id = entry.track.id.clone();
+        let p = self.position;
+        let keep = (p > RESUME_MARGIN && p < duration - RESUME_MARGIN).then_some(p);
+        let old = self.resume.get(&id).copied();
+        let changed = match (old, keep) {
+            (Some(a), Some(b)) => (a - b).abs() >= 1.0,
+            (None, None) => false,
+            _ => true,
+        };
+        if !changed {
+            return;
+        }
+        match keep {
+            Some(p) => self.resume.insert(id.clone(), p),
+            None => self.resume.remove(&id),
+        };
+        self.emit(Event::ResumePoint { id, position: keep });
     }
 
     /// The output device went away or its stream must be built again (e.g. another sample
@@ -1330,6 +1609,11 @@ impl Worker {
         let played = self.shared.played_frames();
         let mut transitioned = false;
         while self.segments.len() > 1 && self.segments[1].start_frame <= played {
+            if !transitioned {
+                // The song that ends now: it played to its end.
+                self.position = self.duration.unwrap_or(self.position);
+                self.remember();
+            }
             self.segments.pop_front();
             transitioned = true;
         }
@@ -1352,15 +1636,30 @@ impl Worker {
                 self.position = self.position.min(d);
             }
         }
-        if self.end_of_queue
+        if self.waiting_next.is_some()
+            && !self.tail.is_empty()
+            && self.frames_written.saturating_sub(played) < u64::from(self.spec.sample_rate / 10)
+        {
+            // The next song is late: rather play the end of this one without a crossfade
+            // than a gap.
+            self.flush_tail();
+        }
+        let all_written = self.end_of_queue
             && self.active.is_none()
             && self.waiting_next.is_none()
             && self.pipe.conv.is_none()
-            && !self.pipe.has_pending()
-            && played >= self.frames_written
-            && self.state != PlayState::Stopped
-        {
+            && !self.pipe.has_pending();
+        self.shared.set_input_ended(all_written);
+        if all_written && played >= self.frames_written && self.state != PlayState::Stopped {
+            if let Some(index) = self.pause_at.take() {
+                self.position = self.duration.unwrap_or(self.position);
+                self.remember();
+                self.play_index(index, 0.0, true);
+                return;
+            }
             self.end_of_queue = false;
+            self.position = self.duration.unwrap_or(self.position);
+            self.remember();
             self.reset_pipeline();
             self.position = 0.0;
             self.set_state(PlayState::Stopped);
@@ -1373,6 +1672,9 @@ impl Worker {
             && self.last_position_event.elapsed() >= Duration::from_millis(500)
         {
             self.emit_position();
+        }
+        if self.state == PlayState::Playing && self.last_resume.elapsed() >= RESUME_EVERY {
+            self.remember();
         }
     }
 
@@ -1406,4 +1708,19 @@ impl Worker {
             self.published_queue_version = self.queue_version;
         }
     }
+}
+
+/// Mix the next frames of `m.tail` into `x` (the start of the new song): equal power, the old
+/// song fading out as the new one fades in.
+fn mix_in(m: &mut Mix, x: &mut [f32], ch: usize) {
+    let n = (x.len() / ch).min(m.frames - m.pos);
+    for f in 0..n {
+        let t = (m.pos + f) as f32 / m.frames.max(1) as f32;
+        let (gin, gout) = (t * std::f32::consts::FRAC_PI_2).sin_cos();
+        for c in 0..ch {
+            let i = f * ch + c;
+            x[i] = x[i] * gin + m.tail[(m.pos + f) * ch + c] * gout;
+        }
+    }
+    m.pos += n;
 }

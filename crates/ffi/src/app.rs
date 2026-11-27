@@ -13,6 +13,7 @@ use infrasonic_subsonic::{self as ss, Client, SearchOptions, StarTarget};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 
+use crate::resume::ResumeStore;
 use crate::types::*;
 
 /// Receives playback events. Called on a background thread; keep it short.
@@ -126,6 +127,10 @@ pub struct Infrasonic {
     settings: Mutex<PlaybackSettings>,
     /// The equalizer, if on. The app keeps presets and chooses one per output device.
     equalizer: Mutex<Option<EqualizerSettings>>,
+    /// Playback speed; not saved, the app sets it.
+    speed: Mutex<f32>,
+    /// Resume points of the current server.
+    resume: Arc<Mutex<Option<ResumeStore>>>,
 }
 
 impl std::fmt::Debug for Infrasonic {
@@ -148,7 +153,7 @@ const MIB: u64 = 1024 * 1024;
 const SETTINGS_FILE: &str = "settings.json";
 const PROFILES_FILE: &str = "profiles.json";
 
-fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T> {
+pub(crate) fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T> {
     let bytes = std::fs::read(path).ok()?;
     match serde_json::from_slice(&bytes) {
         Ok(v) => Some(v),
@@ -160,7 +165,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T
 }
 
 /// Write a file atomically (temporary file + rename), creating its directory.
-fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+pub(crate) fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
     let io = |e: std::io::Error| FfiError::Other {
         reason: format!("cannot write {}: {e}", path.display()),
     };
@@ -196,6 +201,8 @@ impl Infrasonic {
             listener: Arc::new(RwLock::new(None)),
             settings: Mutex::new(settings),
             equalizer: Mutex::new(None),
+            speed: Mutex::new(1.0),
+            resume: Arc::new(Mutex::new(None)),
         }))
     }
 
@@ -272,7 +279,24 @@ impl Infrasonic {
         if eq.is_some() {
             session.send(Command::SetEqualizer(eq));
         }
-        forward_events(events, self.listener.clone());
+        let speed = *self.speed.lock();
+        if speed != 1.0 {
+            session.send(Command::SetSpeed(speed));
+        }
+        if settings.crossfade_secs > 0.0 {
+            session.send(Command::SetCrossfade(settings.crossfade_secs));
+        }
+        let store = ResumeStore::load(
+            self.data_dir
+                .join("resume")
+                .join(format!("{}.json", profile.key())),
+        );
+        session.send(Command::SetResume {
+            min_duration: settings.resume_min_duration(),
+            points: store.points(),
+        });
+        *self.resume.lock() = Some(store);
+        forward_events(events, self.listener.clone(), self.resume.clone());
         let old = self.active.write().replace(Active {
             profile,
             session: Arc::new(session),
@@ -284,17 +308,33 @@ impl Infrasonic {
 
 /// Deliver session events to the listener from a thread of their own, so that a slow
 /// listener never holds up the runtime. Ends when the session is gone.
-fn forward_events(mut events: mpsc::UnboundedReceiver<SessionEvent>, listener: Listener) {
-    let _ = std::thread::Builder::new()
-        .name("infrasonic-listener".into())
-        .spawn(move || {
-            while let Some(ev) = events.blocking_recv() {
-                let l = listener.read().clone();
-                if let Some(l) = l {
-                    l.on_event(ev.into());
+fn forward_events(
+    mut events: mpsc::UnboundedReceiver<SessionEvent>,
+    listener: Listener,
+    resume: Arc<Mutex<Option<ResumeStore>>>,
+) {
+    let _ =
+        std::thread::Builder::new()
+            .name("infrasonic-listener".into())
+            .spawn(move || {
+                while let Some(ev) = events.blocking_recv() {
+                    if let SessionEvent::Engine(infrasonic_engine::Event::ResumePoint {
+                        id,
+                        position,
+                    }) = &ev
+                        && let Some(store) = resume.lock().as_mut()
+                    {
+                        store.set(id, *position);
+                    }
+                    let Some(ev) = PlayerEvent::from_session(ev) else {
+                        continue;
+                    };
+                    let l = listener.read().clone();
+                    if let Some(l) = l {
+                        l.on_event(ev);
+                    }
                 }
-            }
-        });
+            });
 }
 
 #[uniffi::export]
@@ -352,6 +392,21 @@ impl Infrasonic {
             let cfg = settings.to_config();
             session.send(Command::SetReplayGain(cfg.replay_gain_config()));
         }
+        if old.crossfade_secs != settings.crossfade_secs {
+            session.send(Command::SetCrossfade(settings.crossfade_secs));
+        }
+        if old.resume_after_minutes != settings.resume_after_minutes {
+            let points = self
+                .resume
+                .lock()
+                .as_ref()
+                .map(ResumeStore::points)
+                .unwrap_or_default();
+            session.send(Command::SetResume {
+                min_duration: settings.resume_min_duration(),
+                points,
+            });
+        }
         if old.cache_mb != settings.cache_mb
             && let Some(active) = self.active.read().as_ref()
         {
@@ -379,6 +434,30 @@ impl Infrasonic {
 
     pub fn equalizer(&self) -> Option<EqualizerSettings> {
         self.equalizer.lock().clone()
+    }
+
+    /// Play `speed` times as fast (0.5–3) at the same pitch; heard at once. Not saved.
+    pub fn set_speed(&self, speed: f32) {
+        let speed = infrasonic_engine::tempo::clamp_speed(speed);
+        *self.speed.lock() = speed;
+        if let Ok(session) = self.session() {
+            session.send(Command::SetSpeed(speed));
+        }
+    }
+
+    pub fn speed(&self) -> f32 {
+        *self.speed.lock()
+    }
+
+    /// Pause when the current song ends, at the start of the next one (sleep timer).
+    pub fn pause_after_current(&self, on: bool) -> Result<()> {
+        self.session()?.send(Command::PauseAfterCurrent(on));
+        Ok(())
+    }
+
+    /// Where a long song was left, if it starts there again (seconds).
+    pub fn resume_position(&self, id: String) -> Option<f64> {
+        self.resume.lock().as_ref().and_then(|s| s.get(&id))
     }
 
     /// The saved servers.

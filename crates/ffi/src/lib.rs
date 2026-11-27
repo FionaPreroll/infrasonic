@@ -11,6 +11,7 @@
 
 mod android;
 mod app;
+mod resume;
 mod types;
 
 pub use app::{Infrasonic, PlayerCommand, PlayerListener};

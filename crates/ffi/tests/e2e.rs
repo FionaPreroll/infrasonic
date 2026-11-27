@@ -351,3 +351,31 @@ fn equalizer_settings() {
     a.set_equalizer(None);
     assert_eq!(a.equalizer(), None);
 }
+
+#[test]
+fn speed_crossfade_and_resume_settings() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let a = app(&dir, 1.0);
+    assert_eq!(a.speed(), 1.0);
+    a.set_speed(1.75);
+    assert_eq!(a.speed(), 1.75);
+    a.set_speed(9.0);
+    assert_eq!(a.speed(), 3.0, "clamped");
+    assert_eq!(
+        a.pause_after_current(true),
+        Err(FfiError::NotConnected),
+        "needs a session"
+    );
+    let st = a.settings();
+    assert_eq!((st.crossfade_secs, st.resume_after_minutes), (0.0, 15));
+    a.set_settings(PlaybackSettings {
+        crossfade_secs: 4.0,
+        resume_after_minutes: 0,
+        ..st
+    });
+    drop(a);
+    let b = app(&dir, 1.0);
+    assert_eq!(b.settings().crossfade_secs, 4.0);
+    assert_eq!(b.settings().resume_after_minutes, 0);
+    assert_eq!(b.resume_position("x".into()), None);
+}
