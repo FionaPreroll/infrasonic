@@ -61,6 +61,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import io.github.fionapreroll.infrasonic.update.UpdateDialog
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.PlayState
 import io.github.fionapreroll.infrasonic.data.Connection
@@ -133,6 +134,7 @@ fun AppRoot() {
     val start = remember { if (Graph.servers.profiles.value.isEmpty()) Routes.server(Routes.NEW_SERVER) else Routes.HOME }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { Graph.player.messages.collect { snackbar.showSnackbar(it) } }
+    UpdateDialog()
     CompositionLocalProvider(LocalNav provides nav) {
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route ?: ""

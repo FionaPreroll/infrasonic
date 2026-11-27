@@ -30,6 +30,7 @@ import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.playback.PlaybackService
 import io.github.fionapreroll.infrasonic.playback.reason
 import io.github.fionapreroll.infrasonic.playback.songsForQuery
+import io.github.fionapreroll.infrasonic.update.AppUpdates
 import kotlinx.coroutines.launch
 import io.github.fionapreroll.infrasonic.widget.PlayerWidget
 
@@ -43,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         PlayerWidget.follow(this)
         askForNotifications()
         handle(intent)
+        if (savedInstanceState == null) AppUpdates.onStart(applicationContext)
         setContent {
             val theme by Graph.prefs.theme.flow.collectAsState()
             val dynamic by Graph.prefs.dynamicColor.flow.collectAsState()

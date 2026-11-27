@@ -15,7 +15,7 @@ abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
 cd android
 adb logcat -c || true
 status=0
-./gradlew :app:connectedDebugAndroidTest --console=plain \
+./gradlew :app:connectedGithubDebugAndroidTest --console=plain \
   -Pinfrasonic.abis="$abi" \
   -Pandroid.testInstrumentationRunnerArguments.server="$url" "$@" || status=$?
 if [ "$status" -ne 0 ]; then

@@ -193,6 +193,22 @@ S = {
     "clear_cache_confirm": ("Delete cached songs and covers? Downloads stay.", "Zwischengespeicherte Titel und Cover löschen? Downloads bleiben."),
     "about": ("About", "Über"),
     "about_text": ("Free software under the GPL 3.0. Core %1$s.", "Freie Software unter der GPL 3.0. Kern %1$s."),
+    # updates (GitHub build only)
+    "yes": ("Yes", "Ja"),
+    "no": ("No", "Nein"),
+    "updates": ("Updates", "Updates"),
+    "check_updates": ("Look for a new version at every start", "Bei jedem Start nach einer neuen Version suchen"),
+    "check_updates_hint": ("Asks GitHub, where this build comes from. Google Play and F-Droid bring their updates themselves.", "Fragt bei GitHub nach, woher dieser Build stammt. Google Play und F-Droid bringen ihre Updates selbst."),
+    "check_updates_question": ("Look for a new version of infrasonic on GitHub at every start? You can change this in the settings.", "Bei jedem Start auf GitHub nach einer neuen Version von infrasonic suchen? Das lässt sich in den Einstellungen ändern."),
+    "check_updates_now": ("Look for a new version now", "Jetzt nach einer neuen Version suchen"),
+    "update_checking": ("Looking …", "Suche …"),
+    "update_title": ("New version", "Neue Version"),
+    "update_text": ("Version %1$s is available (%2$s MB). Download and install it?", "Version %1$s ist verfügbar (%2$s MB). Herunterladen und installieren?"),
+    "update_metered": ("You are on a metered connection.", "Du bist über eine getaktete Verbindung online."),
+    "update_download": ("Install", "Installieren"),
+    "update_later": ("Later", "Später"),
+    "update_none": ("infrasonic is up to date.", "infrasonic ist aktuell."),
+    "update_failed": ("Could not get the new version.", "Die neue Version ließ sich nicht laden."),
     # widget, Android Auto
     "widget_description": ("Current song with controls", "Aktueller Titel mit Steuerung"),
 }

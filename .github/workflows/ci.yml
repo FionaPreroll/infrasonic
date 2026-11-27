@@ -132,12 +132,20 @@ jobs:
           path: target/aarch64-linux-android/release/infrasonic-headless
           retention-days: 14
 
+  # The Android app: the GitHub build (debug) through lint, the JVM tests and the emulator, the store
+  # build through lint. On main, if the app changed since the release android-latest, also the GitHub
+  # build as an unsigned release APK, which android-latest signs and publishes.
   android-app:
     name: Android app (build, lint, tests, emulator)
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
+    outputs:
+      changed: ${{ steps.changed.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The GitHub build's number is the number of commits (android/app/build.gradle.kts).
+          fetch-depth: 0
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-java@v4
@@ -153,7 +161,7 @@ jobs:
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
       - name: Build, lint, unit tests against Navidrome and gonic
-        run: scripts/e2e-servers.sh android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest --console=plain
+        run: scripts/e2e-servers.sh android/gradlew -p android :app:assembleGithubDebug :app:lintGithubDebug :app:lintStoreDebug :app:testGithubDebugUnitTest --console=plain
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -172,10 +180,118 @@ jobs:
         with:
           name: android-app
           path: |
-            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/github/debug/*.apk
             android/app/build/reports/
             android/app/build/outputs/connected_android_test_additional_output/
           retention-days: 14
+      # Whether what goes into the app changed since the commit android-latest points at. Only then
+      # is there a new release, so installed apps are offered an update only when something in it
+      # is new. Without the tag it counts as changed.
+      - id: changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          changed=true
+          if git fetch --no-tags --depth=1 origin "+refs/tags/android-latest:refs/tags/android-latest" 2>/dev/null &&
+            git diff --quiet android-latest HEAD -- android crates vendor Cargo.toml Cargo.lock rust-toolchain.toml \
+              ':(exclude)android/app/src/test' ':(exclude)android/app/src/androidTest' ':(exclude)android/fdroid' \
+              ':(exclude)crates/e2e' ':(exclude)crates/web' ':(exclude)crates/tui' ':(exclude)crates/*/tests'; then
+            changed=false
+          fi
+          echo "Released from $(git rev-parse --short android-latest 2>/dev/null || echo nothing), app changed: $changed"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      # Never with the signing key: this job runs the build scripts. android-latest signs the APK.
+      - name: GitHub build for android-latest (unsigned)
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          export INFRASONIC_BUILD=$(git rev-list --count HEAD) INFRASONIC_COMMIT=$GITHUB_SHA
+          android/gradlew -p android :app:assembleGithubRelease --console=plain --no-build-cache
+          mkdir -p out
+          cp android/app/build/outputs/apk/github/release/app-github-release-unsigned.apk out/infrasonic-unsigned.apk
+      - uses: actions/upload-artifact@v4
+        if: steps.changed.outputs.changed == 'true'
+        with:
+          name: android-latest-unsigned
+          path: out/
+          retention-days: 7
+
+  # Every push to main that passed every check and changed the app replaces the release
+  # android-latest: the GitHub build's APK, signed here, and its version.json, which the app reads
+  # to find a newer build (android/app/src/github/). Only this job sees the signing key, from the
+  # environment android-release, and it runs none of the repository's build scripts.
+  android-latest:
+    name: Android release android-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.android-app.outputs.changed == 'true'
+    needs: [lint, test, web, android, android-app, deny]
+    runs-on: ubuntu-24.04
+    environment: android-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: android-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-latest-unsigned
+          path: out
+      - name: Sign
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "secret ANDROID_KEYSTORE_BASE64 missing" >&2; exit 1; }
+          [ -n "$KEY_PASSWORD" ] || KEY_PASSWORD=$KEYSTORE_PASSWORD
+          export KEY_PASSWORD
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          "$tools/zipalign" -P 16 -f 4 out/infrasonic-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD --v1-signing-enabled false \
+            --out out/infrasonic.apk "$RUNNER_TEMP/aligned.apk"
+          rm -f "$RUNNER_TEMP/release.jks"
+          "$tools/apksigner" verify --print-certs out/infrasonic.apk | grep -v -i "public key"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: android-latest
+        run: |
+          # Only for the commit main points at now, so an older run that ends last does not
+          # replace a newer build.
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then echo "main moved on"; exit 0; fi
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          version=$("$tools/aapt2" dump badging out/infrasonic.apk | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          code=$("$tools/aapt2" dump badging out/infrasonic.apk | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          printf '{"build":%s,"version":"%s","size":%s,"sha256":"%s"}\n' "$code" "$version" \
+            "$(stat -c %s out/infrasonic.apk)" "$(sha256sum out/infrasonic.apk | cut -d' ' -f1)" > out/version.json
+          cat out/version.json
+          cat > notes.md <<NOTES
+          The newest build of infrasonic for Android, version $version from commit ${GITHUB_SHA::7}. This release is replaced whenever the app changes on \`main\`.
+
+          **Installing:** download \`infrasonic.apk\` below and open it on your phone; Android asks once to allow installing apps from that source. A newer APK installs over an older one, and the app can look for one itself (Settings → Updates).
+
+          Google Play and F-Droid get the tagged releases (\`android-vX.Y.Z\`), without the update check.
+          NOTES
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true
+          else
+            gh api --silent -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA"
+          fi
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/infrasonic.apk out/version.json --clobber -R "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "infrasonic for Android (latest build)" --notes-file notes.md --latest=false -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" out/infrasonic.apk out/version.json --title "infrasonic for Android (latest build)" \
+              --notes-file notes.md --latest=false -R "$GITHUB_REPOSITORY"
+          fi
+      # gh attestation verify infrasonic.apk --repo FionaPreroll/infrasonic
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/infrasonic.apk
 
   deny:
     name: Licenses and advisories

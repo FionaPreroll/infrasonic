@@ -5,9 +5,18 @@ plugins {
 }
 
 // The release version. versionCode = MAJOR * 10000 + MINOR * 100 + PATCH; tags are android-vX.Y.Z.
-// One universal APK for every channel (GitHub, F-Droid), so the version code is the same everywhere.
+// One universal APK per channel (no ABI splits); the store build is the same on Play and F-Droid.
 val appVersion = "0.1.0"
 val appVersionCode = appVersion.split(".").map(String::toInt).let { (a, b, c) -> a * 10000 + b * 100 + c }
+
+// The GitHub build (release android-latest) comes from every commit on main that changes the app.
+// CI sets INFRASONIC_BUILD to the number of commits on main, which only grows and is the same for
+// anyone who builds that commit. Its version code is above every store build's, so a store build
+// updates to it, and the update check compares it with the release's version.json.
+val githubBuild = System.getenv("INFRASONIC_BUILD")?.toInt()
+val githubVersionCode = githubBuild?.let { 1_000_000 + it } ?: appVersionCode
+val githubVersionName = githubBuild?.let { "$appVersion-$it-" + (System.getenv("INFRASONIC_COMMIT") ?: "").take(7) }
+    ?: appVersion
 
 // Android ABIs for the Rust library; `-Pinfrasonic.abis=arm64-v8a` builds fewer.
 val abis = (findProperty("infrasonic.abis") as String? ?: "arm64-v8a,armeabi-v7a,x86_64")
@@ -81,6 +90,27 @@ android {
             enableV1Signing = false
             enableV2Signing = true
             enableV3Signing = true
+        }
+    }
+
+    // "github" installs new versions of itself from the release android-latest, if the user agrees
+    // (src/github/). "store" is for Google Play and F-Droid, which bring updates themselves: no
+    // update check and no permission to install apps (src/store/).
+    flavorDimensions += "channel"
+    productFlavors {
+        create("github") {
+            dimension = "channel"
+            versionCode = githubVersionCode
+            versionName = githubVersionName
+            buildConfigField(
+                "String",
+                "UPDATES_URL",
+                "\"" + (System.getenv("INFRASONIC_UPDATES_URL")
+                    ?: "https://github.com/FionaPreroll/infrasonic/releases/download/android-latest/") + "\"",
+            )
+        }
+        create("store") {
+            dimension = "channel"
         }
     }
 
@@ -175,6 +205,7 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.json)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.jna)
 

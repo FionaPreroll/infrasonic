@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Android release: on `android-vX.Y.Z` tags, build the signed APK and AAB, rebuild the APK
+# Android release: on `android-vX.Y.Z` tags, build the store build (Google Play, F-Droid; no update
+# check, see android/app/src/store/) as signed APK and AAB, rebuild the APK
 # unsigned in another directory and check that both are the same apart from the signature
 # (the same check F-Droid makes), then publish them with checksums and build provenance.
 # A manual run without a tag only builds and checks reproducibility.
@@ -76,17 +77,17 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Build
         run: |
-          tasks=":app:assembleRelease"
-          [ "${{ matrix.kind }}" = signed ] && tasks="$tasks :app:bundleRelease"
+          tasks=":app:assembleStoreRelease"
+          [ "${{ matrix.kind }}" = signed ] && tasks="$tasks :app:bundleStoreRelease"
           android/gradlew -p android $tasks --console=plain --no-build-cache
           v=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' android/app/build.gradle.kts)
           mkdir -p "$GITHUB_WORKSPACE/out"
-          apk=$(ls android/app/build/outputs/apk/release/*.apk)
+          apk=$(ls android/app/build/outputs/apk/store/release/*.apk)
           suffix=""
           [ -n "${INFRASONIC_KEYSTORE:-}" ] || suffix="-unsigned"
           cp "$apk" "$GITHUB_WORKSPACE/out/infrasonic-android-$v$suffix.apk"
-          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
-            cp android/app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/out/infrasonic-android-$v.aab"
+          if [ -f android/app/build/outputs/bundle/storeRelease/app-store-release.aab ]; then
+            cp android/app/build/outputs/bundle/storeRelease/app-store-release.aab "$GITHUB_WORKSPACE/out/infrasonic-android-$v.aab"
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -110,12 +111,15 @@ jobs:
       - name: Same APK apart from the signature
         run: |
           pip install --user apksigcopier==1.1.1
+          # apksigcopier calls apksigner, which is in the SDK's build tools, not on the PATH.
+          export PATH="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1):$PATH"
           s=$(ls signed/*.apk) r=$(ls rebuild/*.apk)
           case "$s" in
             *-unsigned.apk) cmp "$s" "$r" ;;
             *) apksigcopier compare "$s" --unsigned "$r" ;;
           esac
           echo "reproducible: $(sha256sum "$r")"
+          case "$s" in *-unsigned.apk) ;; *) apksigner verify --print-certs "$s" | grep -i "SHA-256" ;; esac
 
   release:
     name: Publish

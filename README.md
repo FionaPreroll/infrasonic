@@ -184,16 +184,25 @@ Auto with voice search and a home screen widget; several servers, self-signed ce
 Material You themes and English and German texts. Android 8 or newer.
 
 ```sh
-android/gradlew -p android :app:assembleDebug -Pinfrasonic.abis=arm64-v8a   # needs the SDK, NDK 29, cargo-ndk
-scripts/e2e-servers.sh android/gradlew -p android :app:testDebugUnitTest   # Kotlin bindings against Navidrome and gonic
+android/gradlew -p android :app:assembleGithubDebug -Pinfrasonic.abis=arm64-v8a   # needs the SDK, NDK 29, cargo-ndk
+scripts/e2e-servers.sh android/gradlew -p android :app:testGithubDebugUnitTest   # Kotlin bindings against Navidrome and gonic
 scripts/android-device-test.sh                 # UI test on a running emulator, with screenshots
 ```
 
 `scripts/android-sdk.sh` installs the SDK packages, the pinned NDK, the Rust targets and
 cargo-ndk. Texts live in `android/tools/strings.py`, which writes both `strings.xml` files.
 
+Two builds: `github` looks for new versions of itself if the user agrees (asked at the first
+start, Settings → Updates) and installs them; `store` is for Google Play and F-Droid, which bring
+updates themselves, without the update check and without the permission to install apps.
+
+The latest build: every push to `main` that passes CI and changes the app replaces the release
+[`android-latest`](https://github.com/FionaPreroll/infrasonic/releases/tag/android-latest) with
+the signed GitHub build (`infrasonic.apk`) and its `version.json`, which the update check reads.
+Its versionCode is 1000000 plus the number of commits, above every store build's.
+
 Releases: a tag `android-vX.Y.Z` (matching `appVersion` in `android/app/build.gradle.kts`;
-versionCode is `X*10000 + Y*100 + Z`) builds the signed APK and AAB, rebuilds the APK unsigned
+versionCode is `X*10000 + Y*100 + Z`) builds the store build as signed APK and AAB, rebuilds the APK unsigned
 in another directory and checks that both match apart from the signature, then publishes them
 with `SHA256SUMS` and build provenance (`gh attestation verify`). With the secret
 `PLAY_SERVICE_ACCOUNT_JSON` it also uploads to the Google Play internal track. Store texts are in

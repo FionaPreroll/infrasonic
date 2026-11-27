@@ -24,7 +24,7 @@ Builds:
       - apt-get update
       - apt-get install -y openjdk-21-jdk-headless libasound2-dev pkg-config
       - update-alternatives --auto java
-    output: build/outputs/apk/release/app-release-unsigned.apk
+    output: build/outputs/apk/store/release/app-store-release-unsigned.apk
     srclibs:
       - rustup@1.28.2
     build:
@@ -36,7 +36,7 @@ Builds:
       - cargo install cargo-ndk --version 4.1.2 --locked
     ndk: 29.0.14206865
     gradle:
-      - yes
+      - store
 
 AllowedAPKSigningKeys: TODO
 

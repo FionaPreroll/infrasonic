@@ -54,4 +54,8 @@ class UiPrefs(context: Context) {
 
     /** Use only downloaded songs, even with a connection. */
     val offlineMode = boolPref("offline_mode", false)
+
+    /** GitHub build: look for a newer build at every start; asked once at the first start. */
+    val checkUpdates = boolPref("check_updates", false)
+    val askedUpdates = boolPref("asked_updates", false)
 }

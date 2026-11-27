@@ -38,6 +38,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import io.github.fionapreroll.infrasonic.BuildConfig
+import io.github.fionapreroll.infrasonic.update.AppUpdates
+import io.github.fionapreroll.infrasonic.update.UpdateState
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.PlaybackSettings
 import io.github.fionapreroll.infrasonic.core.ReplayGainMode
@@ -180,6 +182,27 @@ fun SettingsScreen() {
                 headlineContent = { Text(stringResource(R.string.clear_cache)) },
                 supportingContent = { Text(Formatter.formatShortFileSize(context, usage.cachedBytes.toLong())) },
             )
+
+            if (AppUpdates.enabled) {
+                val checkUpdates by prefs.checkUpdates.flow.collectAsState()
+                val updating by AppUpdates.state.collectAsState()
+                HorizontalDivider()
+                SectionTitle(stringResource(R.string.updates))
+                Toggle(stringResource(R.string.check_updates), stringResource(R.string.check_updates_hint), checkUpdates) {
+                    prefs.checkUpdates.value = it
+                }
+                ListItem(
+                    modifier = Modifier.clickable(enabled = updating == UpdateState.Idle) {
+                        AppUpdates.check(context.applicationContext, manual = true)
+                    },
+                    headlineContent = { Text(stringResource(R.string.check_updates_now)) },
+                    supportingContent = if (updating == UpdateState.Checking) {
+                        { Text(stringResource(R.string.update_checking)) }
+                    } else {
+                        null
+                    },
+                )
+            }
 
             HorizontalDivider()
             SectionTitle(stringResource(R.string.about))
