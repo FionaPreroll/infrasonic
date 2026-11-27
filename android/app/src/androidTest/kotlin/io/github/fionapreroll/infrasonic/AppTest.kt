@@ -5,7 +5,12 @@ import android.Manifest
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -58,6 +63,7 @@ class AppTest {
     val onFailure = object : TestWatcher() {
         override fun failed(e: Throwable?, description: Description?) {
             runCatching { screenshot("failed") }
+            runCatching { compose.onAllNodes(isRoot()).printToLog("infrasonic") }
         }
     }
 
@@ -65,6 +71,9 @@ class AppTest {
 
     /** A text field by its label ("Password" is also the name of an authentication method). */
     private fun field(label: String) = compose.onNode(hasText(label) and hasSetTextAction())
+
+    /** Click without a touch: the keyboard may cover buttons below text fields. */
+    private fun SemanticsNodeInteraction.tap() = performSemanticsAction(SemanticsActions.OnClick)
 
     private fun screenshot(name: String) {
         runCatching { compose.waitForIdle() }
@@ -81,10 +90,10 @@ class AppTest {
             field("Name (optional)").performTextReplacement("Test server")
             field("User name").performTextReplacement("admin")
             field("Password").performTextReplacement("admin")
-            compose.onNodeWithText("Test").performClick()
+            compose.onNodeWithText("Test").tap()
             compose.waitUntilAtLeastOneExists(hasText("Works:", substring = true), 20_000)
             screenshot("1-server")
-            compose.onNodeWithText("Save").performClick()
+            compose.onNodeWithText("Save").tap()
         }
 
         compose.waitUntilAtLeastOneExists(hasText("Sine Studies"), 30_000)
