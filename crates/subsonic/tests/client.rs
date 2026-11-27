@@ -208,6 +208,9 @@ async fn podcasts_and_jukebox() {
 
 #[tokio::test]
 async fn bodies_beyond_the_limit_are_refused() {
+    // reqwest is built without a crypto provider; the library installs one, this plain client
+    // does not get it when it runs before any other test in the process.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/big"))
