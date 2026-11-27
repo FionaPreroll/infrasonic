@@ -55,6 +55,20 @@ class UiPrefs(context: Context) {
     /** Use only downloaded songs, even with a connection. */
     val offlineMode = boolPref("offline_mode", false)
 
+    private fun floatPref(key: String, default: Float) =
+        pref(key, { sp.getFloat(key, default) }) { v -> sp.edit { putFloat(key, v) } }
+
+    /** Playback speed for music and for spoken word (podcasts, audio books). */
+    val speedMusic = floatPref("speed_music", 1f)
+    val speedSpoken = floatPref("speed_spoken", 1f)
+
+    /** Download starred songs on Wi-Fi; [autoPinned] are the songs downloaded that way. */
+    val autoFavorites = boolPref("auto_favorites", false)
+    val autoPinned = pref(
+        "auto_pinned",
+        { sp.getStringSet("auto_pinned", emptySet())?.toSet().orEmpty() },
+    ) { v -> sp.edit { putStringSet("auto_pinned", v) } }
+
     /** GitHub build: look for a newer build at every start; asked once at the first start. */
     val checkUpdates = boolPref("check_updates", false)
     val askedUpdates = boolPref("asked_updates", false)

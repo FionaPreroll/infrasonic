@@ -51,6 +51,12 @@ class PlayerController(private val core: Infrasonic) : PlayerListener {
         _pinned.value++
     }
 
+    /** The audible song changed (playback speed per kind of song). */
+    var onTrack: (QueueItem?) -> Unit = {}
+
+    /** Playback paused or stopped (sleep timer). */
+    var onPaused: () -> Unit = {}
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /** Called on the main thread after every change except position updates. */
@@ -75,7 +81,12 @@ class PlayerController(private val core: Infrasonic) : PlayerListener {
             }
             is PlayerEvent.Scrobbled -> return
             is PlayerEvent.Error -> _messages.tryEmit(e.message)
-            is PlayerEvent.QueueChanged, is PlayerEvent.TrackChanged -> _queue.value = core.queue()
+            is PlayerEvent.QueueChanged -> _queue.value = core.queue()
+            is PlayerEvent.TrackChanged -> {
+                _queue.value = core.queue()
+                onTrack(e.item)
+            }
+            is PlayerEvent.StateChanged -> if (e.state == PlayState.PAUSED || e.state == PlayState.STOPPED) onPaused()
             else -> {}
         }
         refreshState()
@@ -103,7 +114,7 @@ class PlayerController(private val core: Infrasonic) : PlayerListener {
     fun positionNow(): Double {
         val s = _state.value ?: return 0.0
         if (s.state != PlayState.PLAYING) return _position.value
-        val p = _position.value + (System.nanoTime() - positionAt) / 1e9
+        val p = _position.value + (System.nanoTime() - positionAt) / 1e9 * core.speed()
         return s.duration?.let { p.coerceAtMost(it) } ?: p
     }
 

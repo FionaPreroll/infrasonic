@@ -91,6 +91,18 @@ import io.github.fionapreroll.infrasonic.ui.screens.EqualizerScreen
 import io.github.fionapreroll.infrasonic.ui.screens.SharesScreen
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import io.github.fionapreroll.infrasonic.core.PlayerCommand
 
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("no navigation") }
 
@@ -131,8 +143,17 @@ private val tabs = listOf(
     Tab(Routes.MORE, R.string.more, Icons.Default.MoreHoriz),
 )
 
-/** The Search tab was tapped while it was open. */
-val searchAgain = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+/** A tab was tapped while it was open (by route): its list goes back to the top. */
+val reselect = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+/** A route to open from outside the app's screens (launcher shortcuts). */
+val openRoute = MutableSharedFlow<String>(replay = 1)
+
+/** Scroll back to the top when the tab of [route] is tapped again. */
+@Composable
+fun ScrollToTopOnReselect(route: String, scroll: suspend () -> Unit) {
+    LaunchedEffect(route) { reselect.filter { it == route }.collect { scroll() } }
+}
 
 @Composable
 fun AppRoot() {
@@ -140,6 +161,18 @@ fun AppRoot() {
     val start = remember { if (Graph.servers.profiles.value.isEmpty()) Routes.server(Routes.NEW_SERVER) else Routes.HOME }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { Graph.player.messages.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) {
+        openRoute.collect { r ->
+            @OptIn(ExperimentalCoroutinesApi::class)
+            openRoute.resetReplayCache()
+            nav.navigate(r) { launchSingleTop = true }
+            // Search opens with its field ready.
+            if (r == Routes.SEARCH) {
+                delay(300)
+                reselect.emit(r)
+            }
+        }
+    }
     UpdateDialog()
     CompositionLocalProvider(LocalNav provides nav) {
         val entry by nav.currentBackStackEntryAsState()
@@ -156,8 +189,8 @@ fun AppRoot() {
                                 NavigationBarItem(
                                     selected = route == t.route,
                                     onClick = {
-                                        // Tapping Search again goes to the search field.
-                                        if (route == t.route && t.route == Routes.SEARCH) searchAgain.tryEmit(Unit)
+                                        // Tapping a tab again scrolls it to the top (Search: to its field).
+                                        if (route == t.route) reselect.tryEmit(t.route)
                                         nav.navigate(t.route) {
                                             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                                             launchSingleTop = true
@@ -269,8 +302,36 @@ private fun MiniPlayer(onOpen: () -> Unit) {
             if (d != null && d > 0) {
                 LinearProgressIndicator(progress = { (position / d).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
             }
+            val scope = rememberCoroutineScope()
+            val offset = remember { Animatable(0f) }
+            var width by remember { mutableFloatStateOf(1f) }
+            val velocity = remember { VelocityTracker() }
             Row(
-                Modifier.fillMaxWidth().testTag("miniplayer").clickable(onClick = onOpen).padding(8.dp),
+                Modifier.fillMaxWidth().testTag("miniplayer")
+                    .onSizeChanged { width = it.width.toFloat() }
+                    .pointerInput(Unit) {
+                        // Swipe left for the next song, right for the previous one.
+                        detectHorizontalDragGestures(
+                            onDragStart = { velocity.resetTracking() },
+                            onDragEnd = {
+                                val step = swipeStep(offset.value, width, velocity.calculateVelocity().x)
+                                when (step) {
+                                    1 -> Graph.player.next()
+                                    -1 -> Graph.player.command(PlayerCommand.PlayIndex(((st?.index ?: 0u).toInt() - 1).coerceAtLeast(0).toUInt()))
+                                }
+                                scope.launch { offset.animateTo(0f) }
+                            },
+                            onDragCancel = { scope.launch { offset.animateTo(0f) } },
+                        ) { change, dx ->
+                            velocity.addPosition(change.uptimeMillis, change.position)
+                            scope.launch { offset.snapTo(offset.value + dx) }
+                        }
+                    }
+                    .graphicsLayer {
+                        translationX = offset.value
+                        alpha = 1f - (kotlin.math.abs(offset.value) / width).coerceIn(0f, 0.6f)
+                    }
+                    .clickable(onClick = onOpen).padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Cover(item.song.coverArt, Modifier.size(44.dp), size = 96, corner = 4.dp)

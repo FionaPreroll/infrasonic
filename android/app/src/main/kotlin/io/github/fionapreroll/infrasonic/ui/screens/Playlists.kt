@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import io.github.fionapreroll.infrasonic.ui.searchAgain
+import io.github.fionapreroll.infrasonic.ui.ScrollToTopOnReselect
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.SearchResult
 import io.github.fionapreroll.infrasonic.data.Graph
@@ -63,6 +63,7 @@ import io.github.fionapreroll.infrasonic.ui.components.share
 import io.github.fionapreroll.infrasonic.ui.toast
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.rememberLazyListState
 
 @Composable
 fun PlaylistsScreen() {
@@ -74,9 +75,11 @@ fun PlaylistsScreen() {
     Screen(stringResource(R.string.playlists), back = false, actions = {
         IconButton(onClick = { creating = true }) { Icon(Icons.Default.Add, stringResource(R.string.new_playlist)) }
     }) {
+        val list = rememberLazyListState()
+        ScrollToTopOnReselect(Routes.PLAYLISTS) { list.animateScrollToItem(0) }
         Loader(tick, load = { Graph.core.playlists() }) { lists, _ ->
             if (lists.isEmpty()) Empty(stringResource(R.string.no_playlists))
-            LazyColumn {
+            LazyColumn(state = list) {
                 items(lists, key = { it.id }) { p ->
                     ListItem(
                         modifier = Modifier.clickable { nav.navigate(Routes.playlist(p.id)) },
@@ -172,11 +175,11 @@ fun SearchScreen() {
     }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) {
-        searchAgain.collect {
-            focus.requestFocus()
-            keyboard?.show()
-        }
+    val list = rememberLazyListState()
+    ScrollToTopOnReselect(Routes.SEARCH) {
+        focus.requestFocus()
+        keyboard?.show()
+        list.animateScrollToItem(0)
     }
     Screen(stringResource(R.string.search), back = false) {
         OutlinedTextField(
@@ -192,7 +195,7 @@ fun SearchScreen() {
             Empty(stringResource(R.string.no_results))
             return@Screen
         }
-        LazyColumn {
+        LazyColumn(state = list) {
             if (r.artists.isNotEmpty()) item { SectionTitle(stringResource(R.string.artists)) }
             items(r.artists, key = { "a" + it.id }) { a ->
                 ListItem(

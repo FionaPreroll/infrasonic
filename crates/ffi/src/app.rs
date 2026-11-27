@@ -920,6 +920,13 @@ impl Infrasonic {
             }
             let l = c.get_lyrics(&song.artist, &song.title).await?;
             let text = l.value.trim();
+            if let Some(lines) = crate::lrc::parse(text) {
+                return Ok(Some(Lyrics {
+                    synced: true,
+                    lang: None,
+                    lines,
+                }));
+            }
             Ok((!text.is_empty()).then(|| Lyrics {
                 synced: false,
                 lang: None,

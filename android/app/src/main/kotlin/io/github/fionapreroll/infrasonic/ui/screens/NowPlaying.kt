@@ -25,8 +25,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -66,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.fionapreroll.infrasonic.downloads.FavoriteDownloads
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.ItemKind
 import io.github.fionapreroll.infrasonic.core.Lyrics
@@ -84,6 +83,27 @@ import io.github.fionapreroll.infrasonic.ui.components.formatTime
 import io.github.fionapreroll.infrasonic.ui.navBarPadding
 import io.github.fionapreroll.infrasonic.ui.toast
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.mutableFloatStateOf
+import io.github.fionapreroll.infrasonic.playback.SPEEDS
+import io.github.fionapreroll.infrasonic.playback.SleepMode
+import io.github.fionapreroll.infrasonic.playback.speedLabel
+import io.github.fionapreroll.infrasonic.ui.currentLyricsLine
+import io.github.fionapreroll.infrasonic.ui.dropTarget
+import kotlinx.coroutines.delay
 
 private enum class Pane { Cover, Lyrics, Queue }
 
@@ -166,7 +186,10 @@ private fun Controls(song: Song) {
                 val new = !starred
                 scope.launch {
                     runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, new) }
-                        .onSuccess { starred = new }
+                        .onSuccess {
+                            starred = new
+                            FavoriteDownloads.syncSoon(context.applicationContext)
+                        }
                         .onFailure { context.toast(it) }
                 }
             }) {
@@ -186,8 +209,11 @@ private fun Controls(song: Song) {
             },
             valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
         )
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(formatTime(dragging?.toDouble() ?: position), style = MaterialTheme.typography.bodySmall)
+            Box(Modifier.weight(1f))
+            SpeedButton()
+            SleepButton()
             Box(Modifier.weight(1f))
             Text(formatTime(duration), style = MaterialTheme.typography.bodySmall)
         }
@@ -238,7 +264,13 @@ private fun Controls(song: Song) {
 
 @Composable
 private fun LyricsPane(song: Song) {
-    val position by Graph.player.position.collectAsState()
+    // The position between the player's updates, so that lines change on time.
+    val ms by produceState(0L, song.id) {
+        while (true) {
+            value = (Graph.player.positionNow() * 1000).toLong()
+            delay(100)
+        }
+    }
     val lyrics by produceState<Result<Lyrics?>?>(null, song.id) { value = runCatching { Graph.core.lyrics(song) } }
     val l = lyrics?.getOrNull()
     when {
@@ -246,9 +278,12 @@ private fun LyricsPane(song: Song) {
         l == null || l.lines.isEmpty() -> Empty(stringResource(R.string.no_lyrics))
         else -> {
             val list = rememberLazyListState()
-            val ms = (position * 1000).toLong()
-            val current = if (l.synced) l.lines.indexOfLast { (it.startMs ?: Long.MAX_VALUE) <= ms } else -1
-            LaunchedEffect(current) { if (current > 2) list.animateScrollToItem(current - 2) }
+            val starts = remember(l) { l.lines.map { it.startMs } }
+            val current = if (l.synced) currentLyricsLine(starts, ms) else -1
+            // The sung line stays a third down the screen.
+            LaunchedEffect(current) {
+                if (current >= 0) list.animateScrollToItem(current, -list.layoutInfo.viewportSize.height / 3)
+            }
             LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp)) {
                 itemsIndexed(l.lines) { i, line ->
                     val active = i == current
@@ -296,11 +331,45 @@ private fun QueuePane() {
             Empty(stringResource(R.string.queue_empty))
             return@Column
         }
+        var dragged by remember { mutableStateOf<Int?>(null) }
+        var dragOffset by remember { mutableFloatStateOf(0f) }
+        var rowHeight by remember { mutableFloatStateOf(1f) }
+        val target = dragged?.let { dropTarget(it, dragOffset, rowHeight, queue.size) }
         LazyColumn(Modifier.fillMaxSize(), state = list) {
             itemsIndexed(queue, key = { _, q -> q.uid.toLong() }) { i, q ->
                 val current = st?.index?.toInt() == i
+                val d = dragged
+                // The dragged row follows the finger; the rows it passes make room.
+                val shift = when {
+                    d == null || target == null -> 0f
+                    i == d -> dragOffset
+                    d < target && i in d + 1..target -> -rowHeight
+                    target < d && i in target until d -> rowHeight
+                    else -> 0f
+                }
+                val moveUp = stringResource(R.string.move_up)
+                val moveDown = stringResource(R.string.move_down)
                 ListItem(
-                    modifier = Modifier.clickable { Graph.player.command(PlayerCommand.PlayIndex(i.toUInt())) },
+                    modifier = Modifier
+                        .onSizeChanged { rowHeight = it.height.toFloat() }
+                        .zIndex(if (i == d) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = shift
+                            shadowElevation = if (i == d) 8f else 0f
+                        }
+                        .semantics {
+                            customActions = listOfNotNull(
+                                CustomAccessibilityAction(moveUp) {
+                                    Graph.player.command(PlayerCommand.Move(i.toUInt(), (i - 1).toUInt()))
+                                    true
+                                }.takeIf { i > 0 },
+                                CustomAccessibilityAction(moveDown) {
+                                    Graph.player.command(PlayerCommand.Move(i.toUInt(), (i + 1).toUInt()))
+                                    true
+                                }.takeIf { i < queue.size - 1 },
+                            )
+                        }
+                        .clickable { Graph.player.command(PlayerCommand.PlayIndex(i.toUInt())) },
                     colors = if (current) ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else ListItemDefaults.colors(),
                     leadingContent = { Cover(q.song.coverArt, Modifier.size(40.dp), size = 96, corner = 4.dp) },
                     headlineContent = {
@@ -308,16 +377,38 @@ private fun QueuePane() {
                     },
                     supportingContent = { Text(q.song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     trailingContent = {
-                        Row {
-                            IconButton(enabled = i > 0, onClick = { Graph.player.command(PlayerCommand.Move(i.toUInt(), (i - 1).toUInt())) }) {
-                                Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.move_up))
-                            }
-                            IconButton(enabled = i < queue.size - 1, onClick = { Graph.player.command(PlayerCommand.Move(i.toUInt(), (i + 1).toUInt())) }) {
-                                Icon(Icons.Default.KeyboardArrowDown, stringResource(R.string.move_down))
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { Graph.player.command(PlayerCommand.Remove(i.toUInt())) }) {
                                 Icon(Icons.Default.Close, stringResource(R.string.remove))
                             }
+                            Icon(
+                                Icons.Default.DragHandle,
+                                stringResource(R.string.drag_to_move),
+                                Modifier.padding(8.dp).testTag("drag-$i").pointerInput(q.uid) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragged = queue.indexOfFirst { it.uid == q.uid }
+                                            dragOffset = 0f
+                                        },
+                                        onDragEnd = {
+                                            val from = dragged
+                                            if (from != null) {
+                                                val to = dropTarget(from, dragOffset, rowHeight, queue.size)
+                                                if (to != from) Graph.player.command(PlayerCommand.Move(from.toUInt(), to.toUInt()))
+                                            }
+                                            dragged = null
+                                            dragOffset = 0f
+                                        },
+                                        onDragCancel = {
+                                            dragged = null
+                                            dragOffset = 0f
+                                        },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragOffset += amount.y
+                                    }
+                                },
+                            )
                         }
                     },
                 )
@@ -333,5 +424,90 @@ private fun QueuePane() {
                     .onFailure { context.toast(it) }
             }
         }
+    }
+}
+
+@Composable
+private fun SpeedButton() {
+    val speed by Graph.speed.speed.collectAsState()
+    val spoken by Graph.speed.spoken.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = true }) {
+        Text(
+            speedLabel(speed),
+            color = if (speed != 1f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(stringResource(if (spoken) R.string.speed_spoken else R.string.speed_music)) },
+            text = {
+                Column {
+                    SPEEDS.forEach { s ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                Graph.speed.set(s)
+                                open = false
+                            }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = s == speed, onClick = null)
+                            Text(speedLabel(s), Modifier.padding(start = 12.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+}
+
+private val sleepMinutes = listOf(5, 10, 15, 30, 45, 60, 90)
+
+@Composable
+private fun SleepButton() {
+    val mode by Graph.sleep.mode.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    val left by produceState<Long?>(null, mode) {
+        while (true) {
+            value = Graph.sleep.remaining()
+            delay(1000)
+        }
+    }
+    val active = mode != SleepMode.Off
+    TextButton(onClick = { open = true }) {
+        Icon(
+            Icons.Default.Bedtime,
+            stringResource(R.string.sleep_timer),
+            Modifier.size(18.dp),
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            mode == SleepMode.EndOfSong -> Text(stringResource(R.string.sleep_end_of_song_short), Modifier.padding(start = 4.dp))
+            left != null -> Text(formatTime(left!! / 1000.0), Modifier.padding(start = 4.dp))
+        }
+    }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(stringResource(R.string.sleep_timer)) },
+            text = {
+                Column {
+                    @Composable
+                    fun option(label: String, onClick: () -> Unit) = Text(
+                        label,
+                        Modifier.fillMaxWidth().clickable {
+                            onClick()
+                            open = false
+                        }.padding(vertical = 10.dp),
+                    )
+                    sleepMinutes.forEach { m -> option(stringResource(R.string.sleep_minutes, m)) { Graph.sleep.start(m) } }
+                    option(stringResource(R.string.sleep_end_of_song)) { Graph.sleep.endOfSong() }
+                    if (active) option(stringResource(R.string.sleep_off)) { Graph.sleep.cancel() }
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 }

@@ -24,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import io.github.fionapreroll.infrasonic.downloads.FavoriteDownloads
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.FfiException
 import io.github.fionapreroll.infrasonic.data.Graph
@@ -33,6 +34,10 @@ import io.github.fionapreroll.infrasonic.playback.songsForQuery
 import io.github.fionapreroll.infrasonic.update.AppUpdates
 import kotlinx.coroutines.launch
 import io.github.fionapreroll.infrasonic.widget.PlayerWidget
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import io.github.fionapreroll.infrasonic.core.PlayerCommand
 
 class MainActivity : AppCompatActivity() {
     private var controller: ListenableFuture<MediaController>? = null
@@ -44,7 +49,11 @@ class MainActivity : AppCompatActivity() {
         PlayerWidget.follow(this)
         askForNotifications()
         handle(intent)
-        if (savedInstanceState == null) AppUpdates.onStart(applicationContext)
+        if (savedInstanceState == null) {
+            AppUpdates.onStart(applicationContext)
+            FavoriteDownloads.schedule(applicationContext)
+            publishShortcuts()
+        }
         setContent {
             val theme by Graph.prefs.theme.flow.collectAsState()
             val dynamic by Graph.prefs.dynamicColor.flow.collectAsState()
@@ -57,8 +66,54 @@ class MainActivity : AppCompatActivity() {
         handle(intent)
     }
 
-    /** "Play … on infrasonic" from the Assistant. */
+    /** Long-press shortcuts on the launcher icon (in the app's language, so set at each start). */
+    private fun publishShortcuts() {
+        fun shortcut(s: Shortcut, short: Int, long: Int, icon: Int) =
+            ShortcutInfoCompat.Builder(this, s.name)
+                .setShortLabel(getString(short))
+                .setLongLabel(getString(long))
+                .setIcon(IconCompat.createWithResource(this, icon))
+                .setIntent(Intent(s.action, null, this, MainActivity::class.java))
+                .build()
+        val list = listOf(
+            shortcut(Shortcut.Resume, R.string.shortcut_resume, R.string.shortcut_resume_long, R.drawable.ic_shortcut_play),
+            shortcut(Shortcut.ShuffleAll, R.string.shortcut_shuffle, R.string.shortcut_shuffle, R.drawable.ic_shortcut_shuffle),
+            shortcut(Shortcut.Favorites, R.string.shortcut_favorites, R.string.shortcut_favorites_long, R.drawable.ic_shortcut_favorite),
+            shortcut(Shortcut.Search, R.string.shortcut_search, R.string.shortcut_search, R.drawable.ic_shortcut_search),
+        )
+        runCatching { ShortcutManagerCompat.setDynamicShortcuts(this, list) }
+    }
+
+    private fun handleShortcut(s: Shortcut) {
+        ShortcutManagerCompat.reportShortcutUsed(this, s.name)
+        val player = Graph.player
+        if (s == Shortcut.Search) {
+            openRoute.tryEmit(Routes.SEARCH)
+            return
+        }
+        lifecycleScope.launch {
+            Graph.servers.awaitUsable()
+            when (s) {
+                Shortcut.ShuffleAll -> runCatching { Graph.core.randomSongs(100u, null) }
+                    .onSuccess { player.play(it) }.onFailure { toast(it) }
+                Shortcut.Favorites -> runCatching { Graph.core.starred().songs }
+                    .onSuccess { if (it.isEmpty()) toast(R.string.no_favorites) else player.playShuffled(it) }
+                    .onFailure { toast(it) }
+                Shortcut.Resume -> if (player.state.value?.current != null || player.restoreLocalQueue()) {
+                    player.command(PlayerCommand.Play)
+                }
+                Shortcut.Search -> {}
+            }
+        }
+    }
+
+    /** "Play … on infrasonic" from the Assistant, and launcher shortcuts. */
     private fun handle(intent: Intent?) {
+        Shortcut.from(intent?.action)?.let {
+            handleShortcut(it)
+            setIntent(Intent(this, MainActivity::class.java))
+            return
+        }
         if (intent?.action != MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) return
         val query = intent.getStringExtra(SearchManager.QUERY)
         lifecycleScope.launch {

@@ -46,6 +46,7 @@ import io.github.fionapreroll.infrasonic.core.ReplayGainMode
 import io.github.fionapreroll.infrasonic.core.coreVersion
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.data.ThemeMode
+import io.github.fionapreroll.infrasonic.downloads.FavoriteDownloads
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
 import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
@@ -155,6 +156,20 @@ fun SettingsScreen() {
             }
             Toggle(stringResource(R.string.prevent_clipping), null, core.preventClipping) { b -> update { it.copy(preventClipping = b) } }
             Toggle(stringResource(R.string.scrobble), stringResource(R.string.scrobble_hint), core.scrobble) { b -> update { it.copy(scrobble = b) } }
+            Choice(
+                stringResource(R.string.crossfade),
+                listOf(0f, 2f, 4f, 6f, 8f, 10f, 12f),
+                core.crossfadeSecs,
+                { if (it == 0f) stringResource(R.string.crossfade_off) else stringResource(R.string.seconds, it.toInt()) },
+                stringResource(R.string.crossfade_hint),
+            ) { s -> update { it.copy(crossfadeSecs = s) } }
+            Choice(
+                stringResource(R.string.resume_long),
+                listOf(0, 5, 10, 15, 30, 60),
+                core.resumeAfterMinutes.toInt(),
+                { if (it == 0) stringResource(R.string.off) else stringResource(R.string.resume_long_from, it) },
+                stringResource(R.string.resume_long_hint),
+            ) { m -> update { it.copy(resumeAfterMinutes = m.toUInt()) } }
 
             HorizontalDivider()
             SectionTitle(stringResource(R.string.offline))
@@ -163,6 +178,11 @@ fun SettingsScreen() {
                 Graph.scope.launch { Graph.servers.connectActive() }
             }
             Toggle(stringResource(R.string.download_wifi_only), null, wifiOnly) { prefs.downloadOnWifiOnly.value = it }
+            val autoFavorites by prefs.autoFavorites.flow.collectAsState()
+            Toggle(stringResource(R.string.auto_favorites), stringResource(R.string.auto_favorites_hint), autoFavorites) {
+                prefs.autoFavorites.value = it
+                FavoriteDownloads.schedule(context.applicationContext, now = true)
+            }
             Choice(
                 stringResource(R.string.preload),
                 listOf(0, 1, 2, 3, 5),

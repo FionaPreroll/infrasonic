@@ -11,6 +11,7 @@
 
 mod android;
 mod app;
+mod lrc;
 mod resume;
 mod types;
 

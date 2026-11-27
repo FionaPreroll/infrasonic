@@ -11,7 +11,12 @@ import io.github.fionapreroll.infrasonic.core.initLogging
 import io.github.fionapreroll.infrasonic.playback.AudioRoutes
 import io.github.fionapreroll.infrasonic.playback.EqStore
 import io.github.fionapreroll.infrasonic.playback.EqualizerManager
+import io.github.fionapreroll.infrasonic.core.PlayerCommand
 import io.github.fionapreroll.infrasonic.playback.PlayerController
+import io.github.fionapreroll.infrasonic.playback.SleepPlayer
+import io.github.fionapreroll.infrasonic.playback.SleepTimer
+import io.github.fionapreroll.infrasonic.playback.SpeedPolicy
+import io.github.fionapreroll.infrasonic.playback.isSpoken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +41,10 @@ object Graph {
     lateinit var equalizer: EqualizerManager
         private set
     lateinit var routes: AudioRoutes
+        private set
+    lateinit var speed: SpeedPolicy
+        private set
+    lateinit var sleep: SleepTimer
         private set
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -63,6 +72,29 @@ object Graph {
         equalizer = EqualizerManager(eqStore, { l -> core.setEqualizer(l?.let { EqualizerSettings(it.preamp, it.gains) }) })
         routes = AudioRoutes(app) { equalizer.onDevice(it) }
         routes.start()
+        speed = SpeedPolicy(
+            prefs.speedMusic.value,
+            prefs.speedSpoken.value,
+            save = { spoken, s -> (if (spoken) prefs.speedSpoken else prefs.speedMusic).value = s },
+            apply = { core.setSpeed(it) },
+        )
+        sleep = SleepTimer(
+            scope,
+            object : SleepPlayer {
+                override fun volume() = core.state()?.volume?.toInt() ?: core.settings().volume.toInt()
+                override fun setVolume(volume: Int) = player.command(PlayerCommand.SetVolume(volume.coerceIn(0, 100).toUByte()))
+                override fun pause() = player.command(PlayerCommand.Pause)
+                override fun pauseAfterCurrent(on: Boolean) {
+                    runCatching { core.pauseAfterCurrent(on) }
+                }
+            },
+        )
+        player.onTrack = { item ->
+            val s = item?.song
+            val long = core.settings().resumeAfterMinutes.toInt()
+            speed.onSong(s != null && isSpoken(s.mediaType, s.genre, s.duration?.toDouble(), long))
+        }
+        player.onPaused = { sleep.onPaused() }
         ready = true
         scope.launch { servers.connectActive() }
     }

@@ -79,8 +79,19 @@ import io.github.fionapreroll.infrasonic.ui.components.share
 import io.github.fionapreroll.infrasonic.ui.toast
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.rememberLazyListState
+import io.github.fionapreroll.infrasonic.ui.ScrollToTopOnReselect
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.TextButton
 
 private enum class ListTab(val label: Int, val kind: AlbumListKind) {
+    /** Rows of recently and often played, new and random albums. */
+    Overview(R.string.albums_overview, AlbumListKind.Recent),
     Newest(R.string.albums_newest, AlbumListKind.Newest),
     Recent(R.string.albums_recent, AlbumListKind.Recent),
     Frequent(R.string.albums_frequent, AlbumListKind.Frequent),
@@ -101,7 +112,7 @@ fun HomeScreen() {
         DownloadsScreen(back = false)
         return
     }
-    var tab by rememberSaveable { mutableStateOf(ListTab.Newest) }
+    var tab by rememberSaveable { mutableStateOf(ListTab.Overview) }
     val nav = LocalNav.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -118,7 +129,36 @@ fun HomeScreen() {
             }
             FilterChip(selected = false, onClick = { nav.navigate(Routes.GENRES) }, label = { Text(stringResource(R.string.genres)) })
         }
-        AlbumGrid(tab.kind, tab = tab)
+        if (tab == ListTab.Overview) Overview { tab = it } else AlbumGrid(tab.kind, tab = tab)
+    }
+}
+
+/** The start page: a row of albums for each list, with a link to the whole list. */
+@Composable
+private fun Overview(open: (ListTab) -> Unit) {
+    val server by Graph.servers.activeId.collectAsState()
+    val nav = LocalNav.current
+    val list = rememberLazyListState()
+    ScrollToTopOnReselect(Routes.HOME) { list.animateScrollToItem(0) }
+    val rows = listOf(ListTab.Recent, ListTab.Frequent, ListTab.Newest, ListTab.Random)
+    LazyColumn(state = list) {
+        items(rows, key = { it.name }) { t ->
+            val albums by produceState<List<Album>?>(null, server, t) {
+                Graph.servers.awaitUsable()
+                value = runCatching { Graph.core.albumList(t.kind, 20u, 0u) }.getOrDefault(emptyList())
+            }
+            val a = albums
+            if (a != null && a.isEmpty()) return@items
+            Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { SectionTitle(stringResource(t.label)) }
+                TextButton(onClick = { open(t) }) { Text(stringResource(R.string.show_all)) }
+            }
+            LazyRow(Modifier.height(200.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                items(a.orEmpty(), key = { it.id }) { al ->
+                    Box(Modifier.width(140.dp)) { Tile(al.name, al.artist, al.coverArt) { nav.navigate(Routes.album(al.id)) } }
+                }
+            }
+        }
     }
 }
 
@@ -131,6 +171,7 @@ private fun AlbumGrid(kind: AlbumListKind, tab: Any) {
     var error by remember(key) { mutableStateOf<Throwable?>(null) }
     var loading by remember(key) { mutableStateOf(false) }
     val state = rememberLazyGridState()
+    ScrollToTopOnReselect(Routes.HOME) { state.animateScrollToItem(0) }
     val nav = LocalNav.current
     suspend fun more() {
         if (loading || end) return
@@ -173,8 +214,10 @@ fun ArtistsScreen() {
     Screen(stringResource(R.string.artists), back = false, actions = {
         IconButton(onClick = { nav.navigate(Routes.folder(null)) }) { Icon(Icons.Default.Folder, stringResource(R.string.folders)) }
     }) {
+        val list = rememberLazyListState()
+        ScrollToTopOnReselect(Routes.ARTISTS) { list.animateScrollToItem(0) }
         Loader(load = { Graph.core.artists() }) { groups, _ ->
-            LazyColumn {
+            LazyColumn(state = list) {
                 groups.forEach { g ->
                     item(key = "h" + g.name) { SectionTitle(g.name) }
                     items(g.artists, key = { it.id }) { a ->

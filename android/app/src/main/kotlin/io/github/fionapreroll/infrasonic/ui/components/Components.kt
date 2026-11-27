@@ -56,6 +56,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.fionapreroll.infrasonic.downloads.FavoriteDownloads
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.FfiException
 import io.github.fionapreroll.infrasonic.core.ItemKind
@@ -216,7 +217,9 @@ fun SongMenu(song: Song, pinned: Boolean, extra: (@Composable (close: () -> Unit
             text = { Text(stringResource(if (song.starred) R.string.unstar else R.string.star)) },
             onClick = {
                 close()
-                scope.launch { runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, !song.starred) }.onFailure { context.toast(it) } }
+                scope.launch { runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, !song.starred) }
+                        .onSuccess { FavoriteDownloads.syncSoon(context.applicationContext) }
+                        .onFailure { context.toast(it) } }
             },
         )
         if (pinned) {

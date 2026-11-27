@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.printToLog
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -101,6 +102,9 @@ class AppTest {
             compose.onNodeWithText("Save").tap()
         }
 
+        // The start page shows rows of albums; the list of new ones has them all.
+        compose.waitUntilAtLeastOneExists(hasText("Newest") and hasClickAction(), 30_000)
+        compose.onNode(hasText("Newest") and hasClickAction()).tap()
         compose.waitUntilAtLeastOneExists(hasText("Sine Studies"), 30_000)
         Thread.sleep(1500) // covers
         screenshot("2-albums")
