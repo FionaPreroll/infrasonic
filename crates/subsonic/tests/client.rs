@@ -154,3 +154,54 @@ async fn playlist_and_star_calls() {
     c.star(&StarTarget::album("a1")).await.expect("star");
     assert_eq!(c.get_play_queue().await.expect("queue"), None);
 }
+
+#[tokio::test]
+async fn podcasts_and_jukebox() {
+    let server = MockServer::start().await;
+    Mock::given(path("/rest/getPodcasts"))
+        .and(query_param("includeEpisodes", "true"))
+        .respond_with(ok(
+            r#","podcasts":{"channel":[{"id":"c1","url":"https://feed","title":"Show","episode":[
+                {"id":"e1","streamId":"s1","channelId":"c1","title":"Ep 1","duration":60,"status":"completed"},
+                {"id":"e2","channelId":"c1","title":"Ep 2","status":"new"}]}]}"#,
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(path("/rest/jukeboxControl"))
+        .and(query_param("action", "get"))
+        .respond_with(ok(
+            r#","jukeboxPlaylist":{"currentIndex":0,"playing":true,"gain":0.5,"position":12,"entry":[{"id":"a","title":"A"}]}"#,
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(path("/rest/jukeboxControl"))
+        .and(query_param("action", "skip"))
+        .and(query_param("index", "2"))
+        .respond_with(ok(
+            r#","jukeboxStatus":{"currentIndex":2,"playing":true,"gain":0.5,"position":0}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    let ch = c.get_podcasts(true, None).await.expect("podcasts");
+    assert_eq!(ch.len(), 1);
+    let eps = &ch[0].episode;
+    assert_eq!(eps[0].as_song().map(|s| s.id), Some("s1".to_string()));
+    assert!(eps[1].as_song().is_none(), "not downloaded yet");
+
+    let j = c
+        .jukebox(&infrasonic_subsonic::JukeboxAction::Get)
+        .await
+        .expect("jukebox get");
+    assert!(j.playing);
+    assert_eq!(j.entry.len(), 1);
+    let s = c
+        .jukebox(&infrasonic_subsonic::JukeboxAction::Skip {
+            index: 2,
+            offset: 0,
+        })
+        .await
+        .expect("skip");
+    assert_eq!(s.current_index, Some(2));
+}

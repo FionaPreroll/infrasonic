@@ -3,9 +3,10 @@
 /// Errors returned by the Subsonic client.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Transport level failure (DNS, TLS, connection, HTTP status).
+    /// Transport level failure (DNS, TLS, connection, HTTP status). The URL is removed,
+    /// because it carries the login data.
     #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(reqwest::Error),
     /// The server answered with `status: failed`.
     #[error("server error {code}: {message}")]
     Api { code: i32, message: String },
@@ -24,7 +25,26 @@ pub enum Error {
     Url(#[from] url::ParseError),
 }
 
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Error::Http(e.without_url())
+    }
+}
+
 impl Error {
+    /// The server does not implement the call (HTTP 501 or Subsonic error 0 with
+    /// "not implemented"/"not supported").
+    pub fn is_not_supported(&self) -> bool {
+        match self {
+            Error::Http(e) => e.status().is_some_and(|s| s.as_u16() == 501),
+            Error::Api { code: 0, message } => {
+                let m = message.to_lowercase();
+                m.contains("not implemented") || m.contains("not supported")
+            }
+            _ => false,
+        }
+    }
+
     /// Subsonic error code 40/41/44: wrong credentials or token auth not supported.
     pub fn is_auth_error(&self) -> bool {
         matches!(self, Error::Api { code, .. } if (40..=44).contains(code))

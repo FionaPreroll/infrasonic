@@ -124,6 +124,7 @@ pub struct ClientBuilder {
     auth: Auth,
     client_name: String,
     http: Option<reqwest::Client>,
+    accept_invalid_certs: bool,
 }
 
 impl ClientBuilder {
@@ -139,6 +140,13 @@ impl ClientBuilder {
         self
     }
 
+    /// Trust any server certificate (self-signed servers at home). Only on the user's
+    /// explicit request: it gives up protection against interception.
+    pub fn accept_invalid_certs(mut self, yes: bool) -> Self {
+        self.accept_invalid_certs = yes;
+        self
+    }
+
     /// Build the client.
     pub fn build(self) -> Result<Client> {
         let mut base = Url::parse(self.base_url.trim())?;
@@ -151,13 +159,17 @@ impl ClientBuilder {
         base.set_fragment(None);
         let _ = base.set_username("");
         let _ = base.set_password(None);
-        let http = match self.http {
-            Some(h) => h,
-            None => default_http_client()?,
+        let (http, stream_http) = match self.http {
+            Some(h) => (h.clone(), h),
+            None => (
+                default_http_client(self.accept_invalid_certs, false)?,
+                default_http_client(self.accept_invalid_certs, true)?,
+            ),
         };
         Ok(Client {
             inner: Arc::new(Inner {
                 http,
+                stream_http,
                 base,
                 auth: self.auth,
                 client_name: self.client_name,
@@ -175,14 +187,25 @@ pub fn ensure_crypto_provider() {
     }
 }
 
-fn default_http_client() -> Result<reqwest::Client> {
+/// The HTTP client for API calls (`streaming = false`, with a total timeout) or for audio
+/// downloads (no total timeout: large files on slow links may take minutes).
+fn default_http_client(accept_invalid_certs: bool, streaming: bool) -> Result<reqwest::Client> {
     ensure_crypto_provider();
     let b = reqwest::Client::builder();
     #[cfg(not(target_arch = "wasm32"))]
+    let b = b.tls_danger_accept_invalid_certs(accept_invalid_certs);
+    #[cfg(target_arch = "wasm32")]
+    let _ = (accept_invalid_certs, streaming);
+    #[cfg(not(target_arch = "wasm32"))]
     let b = b
         .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(60))
         .user_agent(concat!("infrasonic/", env!("CARGO_PKG_VERSION")));
+    #[cfg(not(target_arch = "wasm32"))]
+    let b = if streaming {
+        b.read_timeout(std::time::Duration::from_secs(30))
+    } else {
+        b.timeout(std::time::Duration::from_secs(60))
+    };
     #[cfg(target_os = "android")]
     let b = android_roots(b);
     Ok(b.build()?)
@@ -222,6 +245,7 @@ fn android_roots(b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
 #[derive(Debug)]
 struct Inner {
     http: reqwest::Client,
+    stream_http: reqwest::Client,
     base: Url,
     auth: Auth,
     client_name: String,
@@ -331,6 +355,7 @@ impl Client {
             auth,
             client_name: DEFAULT_CLIENT_NAME.to_string(),
             http: None,
+            accept_invalid_certs: false,
         }
     }
 
@@ -344,9 +369,15 @@ impl Client {
         &self.inner.auth
     }
 
-    /// The underlying HTTP client, e.g. to download streams.
+    /// The underlying HTTP client for API calls.
     pub fn http(&self) -> &reqwest::Client {
         &self.inner.http
+    }
+
+    /// An HTTP client for audio downloads: same TLS settings as [`Client::http`], but no
+    /// total timeout.
+    pub fn stream_http(&self) -> &reqwest::Client {
+        &self.inner.stream_http
     }
 
     /// Whether the server announced the given OpenSubsonic extension (after [`Client::connect`]).
@@ -808,6 +839,81 @@ impl Client {
     pub async fn delete_internet_radio_station(&self, id: &str) -> Result<()> {
         self.call_unit("deleteInternetRadioStation", &[("id", id.into())])
             .await
+    }
+
+    /// `getPodcasts`; `id` limits it to one channel.
+    pub async fn get_podcasts(
+        &self,
+        include_episodes: bool,
+        id: Option<&str>,
+    ) -> Result<Vec<PodcastChannel>> {
+        let mut p: Params = vec![("includeEpisodes", include_episodes.to_string())];
+        if let Some(id) = id {
+            p.push(("id", id.into()));
+        }
+        self.call("getPodcasts", &p, &["podcasts", "channel"], false)
+            .await
+    }
+
+    /// `getNewestPodcasts`.
+    pub async fn get_newest_podcasts(&self, count: u32) -> Result<Vec<PodcastEpisode>> {
+        self.call(
+            "getNewestPodcasts",
+            &[("count", count.to_string())],
+            &["newestPodcasts", "episode"],
+            false,
+        )
+        .await
+    }
+
+    /// `createPodcastChannel` (needs podcast rights).
+    pub async fn create_podcast_channel(&self, url: &str) -> Result<()> {
+        self.call_unit("createPodcastChannel", &[("url", url.into())])
+            .await
+    }
+
+    /// `deletePodcastChannel`.
+    pub async fn delete_podcast_channel(&self, id: &str) -> Result<()> {
+        self.call_unit("deletePodcastChannel", &[("id", id.into())])
+            .await
+    }
+
+    /// `downloadPodcastEpisode`: ask the server to fetch an episode.
+    pub async fn download_podcast_episode(&self, id: &str) -> Result<()> {
+        self.call_unit("downloadPodcastEpisode", &[("id", id.into())])
+            .await
+    }
+
+    /// `refreshPodcasts`.
+    pub async fn refresh_podcasts(&self) -> Result<()> {
+        self.call_unit("refreshPodcasts", &[]).await
+    }
+
+    /// `jukeboxControl`: drive the server's own audio output.
+    pub async fn jukebox(&self, action: &JukeboxAction) -> Result<JukeboxStatus> {
+        let (name, mut p): (&str, Params) = match action {
+            JukeboxAction::Get => ("get", vec![]),
+            JukeboxAction::Status => ("status", vec![]),
+            JukeboxAction::Set(ids) => ("set", ids.iter().map(|i| ("id", i.clone())).collect()),
+            JukeboxAction::Add(ids) => ("add", ids.iter().map(|i| ("id", i.clone())).collect()),
+            JukeboxAction::Start => ("start", vec![]),
+            JukeboxAction::Stop => ("stop", vec![]),
+            JukeboxAction::Skip { index, offset } => (
+                "skip",
+                vec![("index", index.to_string()), ("offset", offset.to_string())],
+            ),
+            JukeboxAction::Clear => ("clear", vec![]),
+            JukeboxAction::Remove(i) => ("remove", vec![("index", i.to_string())]),
+            JukeboxAction::Shuffle => ("shuffle", vec![]),
+            JukeboxAction::SetGain(g) => ("setGain", vec![("gain", g.clamp(0.0, 1.0).to_string())]),
+        };
+        p.insert(0, ("action", name.into()));
+        let key = if matches!(action, JukeboxAction::Get) {
+            "jukeboxPlaylist"
+        } else {
+            "jukeboxStatus"
+        };
+        self.call("jukeboxControl", &p, &[key], true).await
     }
 
     /// `getShares`.

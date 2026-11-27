@@ -2,7 +2,6 @@
 //! Streams tracks from the Subsonic server into the engine.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use infrasonic_engine::source::{StreamWriter, stream_pair};
 use infrasonic_engine::{Error as EngineError, MediaSource, SourceProvider, Track};
@@ -19,6 +18,8 @@ pub struct HttpSourceProvider {
     http: reqwest::Client,
     handle: tokio::runtime::Handle,
     options: Arc<RwLock<StreamOptions>>,
+    /// Options for pinned songs; `None` uses `options`.
+    pin_options: Arc<RwLock<Option<StreamOptions>>>,
     cache: Arc<RwLock<Option<Arc<AudioCache>>>>,
 }
 
@@ -33,18 +34,13 @@ pub fn variant(o: &StreamOptions) -> String {
 impl HttpSourceProvider {
     /// Create a provider that spawns downloads on `handle`.
     pub fn new(client: Client, handle: tokio::runtime::Handle, options: StreamOptions) -> Self {
-        infrasonic_subsonic::ensure_crypto_provider();
-        // No total timeout: large files on slow links may take minutes.
-        let builder = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .read_timeout(Duration::from_secs(30))
-            .user_agent(concat!("infrasonic/", env!("CARGO_PKG_VERSION")));
-        let http = builder.build().unwrap_or_else(|_| client.http().clone());
+        let http = client.stream_http().clone();
         Self {
             client,
             http,
             handle,
             options: Arc::new(RwLock::new(options)),
+            pin_options: Arc::new(RwLock::new(None)),
             cache: Arc::new(RwLock::new(None)),
         }
     }
@@ -87,12 +83,22 @@ impl HttpSourceProvider {
         let Some(w) = cache.begin(id, "pinned", true) else {
             return Err("already downloading".into());
         };
-        let url = self.client.stream_url(id, &self.options.read().clone());
+        let opts = self
+            .pin_options
+            .read()
+            .clone()
+            .unwrap_or_else(|| self.options.read().clone());
+        let url = self.client.stream_url(id, &opts);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.handle
             .spawn(download_file(self.http.clone(), url, w, Some(tx)));
         rx.await
             .unwrap_or_else(|_| Err("download cancelled".into()))
+    }
+
+    /// Bit rate / format for songs pinned from now on (`None`: same as streaming).
+    pub fn set_pin_options(&self, options: Option<StreamOptions>) {
+        *self.pin_options.write() = options;
     }
 
     /// Change bit rate / format for tracks opened from now on.

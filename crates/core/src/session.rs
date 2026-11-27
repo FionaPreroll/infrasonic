@@ -196,33 +196,20 @@ impl Session {
         !self.info.version.is_empty()
     }
 
-    /// Download songs for offline use, one after the other. Each finished song is reported
-    /// as [`SessionEvent::Pinned`].
+    /// Download songs for offline use, one after the other, in the background. Each
+    /// finished song is reported as [`SessionEvent::Pinned`].
     pub fn pin(&self, songs: Vec<Child>) {
         let provider = self.provider.clone();
         let tx = self.events.clone();
         tokio::runtime::Handle::current().spawn(async move {
-            for song in songs.into_iter().filter(|s| !s.is_dir) {
-                let Some(cache) = provider.cache() else {
-                    return;
-                };
-                if cache.is_pinned(&song.id) {
-                    continue;
-                }
-                match provider.pin(&song.id).await {
-                    Ok(()) => {
-                        cache.note_pin(&song);
-                        let _ = tx.send(SessionEvent::Pinned { id: song.id });
-                    }
-                    Err(e) => {
-                        let _ = tx.send(SessionEvent::Error(format!(
-                            "could not download {}: {e}",
-                            song.title
-                        )));
-                    }
-                }
-            }
+            pin_songs(&provider, &tx, songs).await;
         });
+    }
+
+    /// Download songs for offline use and wait until all are done. Returns the number of
+    /// songs that could not be downloaded; events are sent as with [`Session::pin`].
+    pub async fn pin_and_wait(&self, songs: Vec<Child>) -> usize {
+        pin_songs(&self.provider, &self.events, songs).await
     }
 
     /// Remove pinned songs.
@@ -247,6 +234,16 @@ impl Session {
         p.max_bit_rate = kbps;
         p.format = format;
         self.provider.set_options(stream_options(&p));
+    }
+
+    /// Change the quality of songs pinned from now on; `None` pins like streaming.
+    pub fn set_pin_bit_rate(&self, setting: Option<(u32, Option<String>)>) {
+        self.provider.set_pin_options(setting.map(|(kbps, format)| {
+            let mut p = self.playback.clone();
+            p.max_bit_rate = kbps;
+            p.format = format;
+            stream_options(&p)
+        }));
     }
 
     /// Replace the queue with `songs` and start playing at `start`.
@@ -424,6 +421,37 @@ impl Session {
         drop(self.engine);
         result
     }
+}
+
+/// Download songs into the pinned store; returns the number of failures.
+async fn pin_songs(
+    provider: &HttpSourceProvider,
+    tx: &mpsc::UnboundedSender<SessionEvent>,
+    songs: Vec<Child>,
+) -> usize {
+    let mut failed = 0;
+    for song in songs.into_iter().filter(|s| !s.is_dir) {
+        let Some(cache) = provider.cache() else {
+            return failed + 1;
+        };
+        if cache.is_pinned(&song.id) {
+            continue;
+        }
+        match provider.pin(&song.id).await {
+            Ok(()) => {
+                cache.note_pin(&song);
+                let _ = tx.send(SessionEvent::Pinned { id: song.id });
+            }
+            Err(e) => {
+                failed += 1;
+                let _ = tx.send(SessionEvent::Error(format!(
+                    "could not download {}: {e}",
+                    song.title
+                )));
+            }
+        }
+    }
+    failed
 }
 
 struct Pump {

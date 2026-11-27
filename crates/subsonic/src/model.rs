@@ -435,3 +435,104 @@ pub struct Share {
     #[serde(default)]
     pub entry: Vec<Child>,
 }
+
+/// A podcast episode (`getPodcasts`, `getNewestPodcasts`). Play it through `stream_id`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PodcastEpisode {
+    #[serde(deserialize_with = "id")]
+    pub id: Id,
+    #[serde(default, deserialize_with = "opt_id")]
+    pub stream_id: Option<Id>,
+    #[serde(default, deserialize_with = "opt_id")]
+    pub channel_id: Option<Id>,
+    #[serde(default)]
+    pub title: String,
+    pub description: Option<String>,
+    pub publish_date: Option<String>,
+    /// `new`, `downloading`, `completed`, `error`, `deleted`, `skipped`.
+    pub status: Option<String>,
+    #[serde(default, deserialize_with = "opt_id")]
+    pub cover_art: Option<Id>,
+    pub duration: Option<u32>,
+    pub suffix: Option<String>,
+    pub content_type: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+}
+
+impl PodcastEpisode {
+    /// The episode as a playable song, once the server has downloaded it.
+    pub fn as_song(&self) -> Option<Child> {
+        let id = self.stream_id.clone()?;
+        Some(Child {
+            id,
+            title: self.title.clone(),
+            album: self.album.clone(),
+            artist: self.artist.clone(),
+            cover_art: self.cover_art.clone(),
+            duration: self.duration,
+            suffix: self.suffix.clone(),
+            content_type: self.content_type.clone(),
+            media_type: Some("podcast".into()),
+            ..Child::default()
+        })
+    }
+}
+
+/// A podcast channel (`getPodcasts`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PodcastChannel {
+    #[serde(deserialize_with = "id")]
+    pub id: Id,
+    #[serde(default)]
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    #[serde(default, deserialize_with = "opt_id")]
+    pub cover_art: Option<Id>,
+    pub original_image_url: Option<String>,
+    pub status: Option<String>,
+    pub error_message: Option<String>,
+    #[serde(default)]
+    pub episode: Vec<PodcastEpisode>,
+}
+
+/// State of the server's own player (`jukeboxControl`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JukeboxStatus {
+    pub current_index: Option<i32>,
+    #[serde(default)]
+    pub playing: bool,
+    pub gain: Option<f32>,
+    /// Seconds into the current song.
+    pub position: Option<u32>,
+    /// Filled by the `get` action.
+    #[serde(default)]
+    pub entry: Vec<Child>,
+}
+
+/// Actions of `jukeboxControl`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JukeboxAction {
+    /// Status with the playlist.
+    Get,
+    Status,
+    /// Replace the playlist.
+    Set(Vec<Id>),
+    Add(Vec<Id>),
+    Start,
+    Stop,
+    /// Jump to an entry, optionally at an offset in seconds.
+    Skip {
+        index: u32,
+        offset: u32,
+    },
+    Clear,
+    Remove(u32),
+    Shuffle,
+    /// Volume 0.0–1.0.
+    SetGain(f32),
+}

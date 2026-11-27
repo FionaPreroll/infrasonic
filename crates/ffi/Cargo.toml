@@ -1,0 +1,52 @@
+[package]
+name = "infrasonic-ffi"
+description = "Kotlin interface (UniFFI) to the infrasonic core and engine, for the Android app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "infrasonic_ffi"
+crate-type = ["cdylib", "lib"]
+
+[features]
+## The `uniffi-bindgen` tool that writes the Kotlin bindings.
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+required-features = ["bindgen"]
+
+[dependencies]
+infrasonic-core = { workspace = true }
+infrasonic-engine = { workspace = true, features = ["cpal-output"] }
+infrasonic-subsonic.workspace = true
+uniffi = "0.33"
+tokio.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+tracing-android = "0.2"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+
+[dev-dependencies]
+infrasonic-e2e = { path = "../e2e" }
+tempfile.workspace = true
+
+# The generated scaffolding needs `unsafe`, so this crate does not forbid it like the others.
+[lints.rust]
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+large_enum_variant = "allow"

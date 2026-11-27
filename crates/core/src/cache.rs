@@ -201,6 +201,26 @@ impl AudioCache {
         u
     }
 
+    /// Size of the pinned songs.
+    pub fn pinned_usage(&self) -> Usage {
+        let mut u = Usage::default();
+        if let Ok(rd) = std::fs::read_dir(&self.pinned_dir) {
+            for e in rd.filter_map(Result::ok) {
+                let name = e.file_name();
+                if name.to_string_lossy().starts_with('.') || name == "index.json" {
+                    continue;
+                }
+                if let Ok(m) = e.metadata()
+                    && m.is_file()
+                {
+                    u.files += 1;
+                    u.bytes += m.len();
+                }
+            }
+        }
+        u
+    }
+
     /// Delete all cached (not pinned) songs.
     pub fn clear(&self) -> std::io::Result<()> {
         match std::fs::remove_dir_all(&self.dir) {
