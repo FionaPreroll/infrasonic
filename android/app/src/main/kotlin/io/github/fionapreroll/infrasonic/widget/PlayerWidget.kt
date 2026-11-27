@@ -13,9 +13,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaButtonReceiver
 import io.github.fionapreroll.infrasonic.R
-import io.github.fionapreroll.infrasonic.data.Covers
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.ui.MainActivity
+import kotlinx.coroutines.launch
 
 /**
  * Home screen widget: cover, title and the three buttons. The buttons send media button
@@ -27,6 +27,7 @@ class PlayerWidget : AppWidgetProvider() {
     }
 
     companion object {
+        private const val COVER_SIZE = 256
         private var listening = false
 
         /** Keep widgets in step with the player; call once the app runs. */
@@ -55,8 +56,15 @@ class PlayerWidget : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_player)
             views.setTextViewText(R.id.widget_title, song?.title ?: context.getString(R.string.nothing_playing))
             views.setTextViewText(R.id.widget_artist, song?.artist ?: "")
-            val cover = Covers.uri(song?.coverArt, 256)
-            if (cover != null) views.setImageViewUri(R.id.widget_cover, cover) else views.setImageViewResource(R.id.widget_cover, R.drawable.ic_album)
+            // The cover as a bitmap: the launcher draws the widget and has no access to the
+            // app's covers. Not loaded yet: show the placeholder and update again once it is.
+            val coverId = song?.coverArt
+            val cover = coverId?.let { Graph.covers.cached(it, COVER_SIZE) }
+            if (cover != null) views.setImageViewBitmap(R.id.widget_cover, cover) else views.setImageViewResource(R.id.widget_cover, R.drawable.ic_album)
+            if (coverId != null && cover == null) {
+                val app = context.applicationContext
+                Graph.scope.launch { if (Graph.covers.bitmap(coverId, COVER_SIZE) != null) update(app) }
+            }
             views.setImageViewResource(
                 R.id.widget_play,
                 if (Graph.player.isPlaying) R.drawable.ic_pause else R.drawable.ic_play,

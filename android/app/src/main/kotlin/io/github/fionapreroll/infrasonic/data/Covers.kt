@@ -72,7 +72,10 @@ class Covers(context: Context, private val core: Infrasonic) {
     companion object {
         const val AUTHORITY = BuildConfig.APPLICATION_ID + ".covers"
 
-        /** A content URI for a cover, for media notifications, Android Auto and widgets. */
+        /** Where all covers live; read access is granted for this prefix. */
+        val ROOT: Uri = Uri.Builder().scheme("content").authority(AUTHORITY).build()
+
+        /** A content URI for a cover, for media notifications and Android Auto. */
         fun uri(id: String?, size: Int = 512): Uri? =
             id?.let { Uri.Builder().scheme("content").authority(AUTHORITY).appendPath(it).appendQueryParameter("size", "$size").build() }
     }

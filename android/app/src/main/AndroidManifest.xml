@@ -56,12 +56,13 @@
             </intent-filter>
         </receiver>
 
-        <!-- Cover art for the notification, Android Auto and the widget (read only). -->
+        <!-- Cover art for the notification and Android Auto (read only). Not open to every app:
+             the playback service grants read access to the controllers it trusts. -->
         <provider
             android:name=".data.CoverProvider"
             android:authorities="${applicationId}.covers"
-            android:exported="true"
-            tools:ignore="ExportedContentProvider" />
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <receiver
             android:name=".widget.PlayerWidget"

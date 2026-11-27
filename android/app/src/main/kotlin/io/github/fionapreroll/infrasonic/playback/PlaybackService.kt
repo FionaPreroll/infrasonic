@@ -3,13 +3,16 @@ package io.github.fionapreroll.infrasonic.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Process
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommands
 import androidx.media3.session.SessionError
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -18,6 +21,7 @@ import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.core.AlbumListKind
 import io.github.fionapreroll.infrasonic.core.Song
 import io.github.fionapreroll.infrasonic.data.Connection
+import io.github.fionapreroll.infrasonic.data.Covers
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.ui.MainActivity
 import kotlinx.coroutines.guava.future
@@ -137,7 +141,38 @@ class PlaybackService : MediaLibraryService() {
         return MediaSession.MediaItemsWithStartPosition(resolved, startIndex, startPositionMs)
     }
 
+    /**
+     * Controllers that may browse the library, see what plays and load covers: this app, the
+     * system (notification, lock screen, Bluetooth, and apps the user made notification
+     * listeners), Android Auto and Automotive, and a few Google apps by verified package name.
+     */
+    private fun trusted(session: MediaSession, c: MediaSession.ControllerInfo): Boolean =
+        c.uid == Process.myUid() || c.isTrusted ||
+            session.isMediaNotificationController(c) ||
+            session.isAutoCompanionController(c) || session.isAutomotiveController(c) ||
+            (c.isPackageNameVerified && c.packageName in TRUSTED_PACKAGES)
+
     private inner class Callback : MediaLibrarySession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            if (trusted(session, controller)) {
+                // Android Auto and the like load covers themselves.
+                if (controller.uid != Process.myUid() && controller.packageName != MediaSession.ControllerInfo.LEGACY_CONTROLLER_PACKAGE_NAME) {
+                    runCatching {
+                        grantUriPermission(
+                            controller.packageName, Covers.ROOT,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+                        )
+                    }
+                }
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            }
+            // Any other app: play, pause and skip, but neither the library nor what plays.
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(SessionCommands.EMPTY)
+                .setAvailablePlayerCommands(UNTRUSTED_COMMANDS)
+                .build()
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -232,5 +267,23 @@ class PlaybackService : MediaLibraryService() {
                 q.songs.map { it.toMediaItem() }, q.index.toInt(), (q.position * 1000).toLong(),
             )
         }
+    }
+
+    private companion object {
+        /** Google apps that control media for the user (Assistant, Wear OS) and get the full session. */
+        val TRUSTED_PACKAGES = setOf(
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.wearable.app",
+            "com.google.android.apps.wear.companion",
+        )
+
+        val UNTRUSTED_COMMANDS: Player.Commands = Player.Commands.Builder().addAll(
+            Player.COMMAND_PLAY_PAUSE,
+            Player.COMMAND_STOP,
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+        ).build()
     }
 }
