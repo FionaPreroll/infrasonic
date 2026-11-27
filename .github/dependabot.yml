@@ -11,13 +11,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Minor and patch versions together; a major version gets a pull request of its own, since
+    # it may change behaviour (read its release notes; the PR's CI only runs ci.yml).
     groups:
       actions:
         patterns: ["*"]
-    # Major versions change behaviour; they are taken by hand. Security updates come anyway.
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: docker
     directory: /crates/web/docker
