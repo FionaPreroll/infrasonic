@@ -52,6 +52,18 @@ async function position(page) {
 }
 
 async function waitPlaying(page, beyond = 1, timeout = 30000) {
+  await waitPlayingInner(page, beyond, timeout).catch(async (e) => {
+    const state = await page.evaluate(() => ({
+      position: document.querySelector("#position")?.textContent,
+      button: document.querySelector("#play")?.textContent,
+      title: document.querySelector(".player .title")?.textContent,
+      toast: document.querySelector(".toast")?.textContent,
+    }));
+    throw new Error(`not playing: ${JSON.stringify(state)} (${String(e.message).split("\n")[0]})`);
+  });
+}
+
+async function waitPlayingInner(page, beyond, timeout) {
   await page.waitForFunction(
     (s) => {
       const t = document.querySelector("#position")?.textContent || "0:00";
@@ -273,6 +285,7 @@ for (const [name, server] of servers) {
   });
 
   await step("German texts", async () => {
+    await page.evaluate(() => { location.hash = "#/settings"; });
     await page.selectOption("#language", "de");
     await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "Einstellungen", null, { timeout: 20000 });
     await page.selectOption("#language", "en");

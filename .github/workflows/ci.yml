@@ -92,6 +92,14 @@ jobs:
           npx --prefix crates/web/tests playwright install --with-deps "$b"
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
+      # Firefox plays nothing without a sound server; a null sink is enough.
+      - name: Sound server
+        if: matrix.browser == 'firefox'
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=null
+          pactl set-default-sink null
       - name: Browser test against Navidrome and gonic
         run: |
           python3 -m http.server 8098 --bind 127.0.0.1 --directory target/web &
