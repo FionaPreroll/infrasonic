@@ -1,5 +1,5 @@
 # Draft for fdroiddata (metadata/io.github.fionapreroll.infrasonic.yml).
-# Before submitting: fill in AllowedAPKSigningKeys with the SHA-256 of the release certificate
+# AllowedAPKSigningKeys is the SHA-256 of the release certificate
 #   apksigner verify --print-certs infrasonic-android-X.Y.Z.apk | grep SHA-256
 Categories:
   - Multimedia
@@ -38,7 +38,7 @@ Builds:
     gradle:
       - store
 
-AllowedAPKSigningKeys: TODO
+AllowedAPKSigningKeys: 2d312fd69d899426f94b86ab1a0dd789a023f112c605a93c0ad621ff7a951d3d
 
 AutoUpdateMode: Version android-v%v
 UpdateCheckMode: Tags ^android-v[0-9.]+$
