@@ -5,6 +5,7 @@ import android.Manifest
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -62,6 +63,9 @@ class AppTest {
 
     private val server: String? = InstrumentationRegistry.getArguments().getString("server")
 
+    /** A text field by its label ("Password" is also the name of an authentication method). */
+    private fun field(label: String) = compose.onNode(hasText(label) and hasSetTextAction())
+
     private fun screenshot(name: String) {
         runCatching { compose.waitForIdle() }
         val bmp = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
@@ -73,10 +77,10 @@ class AppTest {
         assumeTrue("no server given", server != null)
         if (Graph.servers.profiles.value.isEmpty()) {
             compose.waitUntilAtLeastOneExists(hasText("Server address"), 10_000)
-            compose.onNodeWithText("Server address").performTextReplacement(server!!)
-            compose.onNodeWithText("Name (optional)").performTextReplacement("Test server")
-            compose.onNodeWithText("User name").performTextReplacement("admin")
-            compose.onNodeWithText("Password").performTextReplacement("admin")
+            field("Server address").performTextReplacement(server!!)
+            field("Name (optional)").performTextReplacement("Test server")
+            field("User name").performTextReplacement("admin")
+            field("Password").performTextReplacement("admin")
             compose.onNodeWithText("Test").performClick()
             compose.waitUntilAtLeastOneExists(hasText("Works:", substring = true), 20_000)
             screenshot("1-server")
@@ -97,7 +101,7 @@ class AppTest {
         compose.onNodeWithTag("miniplayer").performClick()
         compose.waitUntilAtLeastOneExists(hasText("Now playing"), 10_000)
         screenshot("4-now-playing")
-        compose.onNodeWithText("Now playing").assertExists()
+        compose.onAllNodesWithText("Now playing")[0].assertExists()
 
         compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onAllNodesWithText("More")[0].performClick()
