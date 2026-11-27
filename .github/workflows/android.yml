@@ -22,9 +22,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - { kind: signed, dir: infrasonic }
+          - { kind: signed, dir: infrasonic, environment: android-release }
           # Another path and no signing key: what F-Droid and anyone else would build.
           - { kind: rebuild, dir: elsewhere/src/infrasonic-rebuild }
+    # The signing secrets are environment secrets of android-release; the rebuild gets none.
+    environment: ${{ matrix.environment || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
@@ -142,6 +144,7 @@ jobs:
     name: Google Play (internal track)
     needs: verify
     if: startsWith(github.ref, 'refs/tags/android-v')
+    environment: android-release
     runs-on: ubuntu-24.04
     env:
       PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
