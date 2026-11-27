@@ -43,10 +43,10 @@ impl From<ss::Error> for FfiError {
         match e {
             ss::Error::Api { code, .. } => FfiError::Server { code, reason },
             ss::Error::Http(_) => FfiError::Network { reason },
-            ss::Error::Url(_) => FfiError::Other { reason },
-            ss::Error::Decode { .. } | ss::Error::MissingPayload { .. } => {
-                FfiError::Protocol { reason }
-            }
+            ss::Error::Url(_) | ss::Error::Tls(_) => FfiError::Other { reason },
+            ss::Error::Decode { .. }
+            | ss::Error::MissingPayload { .. }
+            | ss::Error::TooLarge { .. } => FfiError::Protocol { reason },
         }
     }
 }
@@ -146,16 +146,26 @@ pub struct ServerProfile {
     pub name: String,
     pub url: String,
     pub auth: ServerAuth,
-    /// Accept any TLS certificate (self-signed servers in a home network).
+    /// Trust the server's own certificate (self-signed, a home CA) instead of a CA's: the one
+    /// in `pinned_certificate`, or on first use the one the server presents.
     pub allow_self_signed: bool,
+    /// SHA-256 (hex) of the trusted certificate when `allow_self_signed` is set; filled in
+    /// from [`ServerStatus::certificate`] after the first connection.
+    #[serde(default)]
+    #[uniffi(default = None)]
+    pub pinned_certificate: Option<String>,
 }
 
 impl ServerProfile {
     pub(crate) fn client(&self) -> Result<ss::Client> {
-        Ok(ss::Client::builder(&self.url, self.auth.to_auth())
-            .client_name("infrasonic-android")
-            .accept_invalid_certs(self.allow_self_signed)
-            .build()?)
+        let b =
+            ss::Client::builder(&self.url, self.auth.to_auth()).client_name("infrasonic-android");
+        let b = if self.allow_self_signed {
+            b.trust_own_certificate(self.pinned_certificate.as_deref())
+        } else {
+            b
+        };
+        Ok(b.build()?)
     }
 
     /// Directory name for this server's cache and pinned songs.
@@ -175,16 +185,20 @@ pub struct ServerStatus {
     pub open_subsonic: bool,
     /// Whether the session talks to the server (false in offline mode).
     pub online: bool,
+    /// SHA-256 (hex) of the certificate the server presented, for a profile that trusts the
+    /// server's own certificate; to be kept as `ServerProfile::pinned_certificate`.
+    pub certificate: Option<String>,
 }
 
 impl ServerStatus {
-    pub(crate) fn from_info(i: &ss::ServerInfo) -> Self {
+    pub(crate) fn from_info(i: &ss::ServerInfo, client: &ss::Client) -> Self {
         Self {
             version: i.version.clone(),
             server_type: i.server_type.clone(),
             server_version: i.server_version.clone(),
             open_subsonic: i.open_subsonic,
             online: !i.version.is_empty(),
+            certificate: client.certificate(),
         }
     }
 }

@@ -7,6 +7,7 @@ const SHELL = [
   'index.html',
   'style.css',
   'config.js',
+  'main.js',
   'worker.js',
   'audio-worklet.js',
   'manifest.webmanifest',

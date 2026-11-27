@@ -6,7 +6,7 @@ pub enum Error {
     /// Transport level failure (DNS, TLS, connection, HTTP status). The URL is removed,
     /// because it carries the login data.
     #[error("HTTP request failed: {0}")]
-    Http(reqwest::Error),
+    Http(#[source] reqwest::Error),
     /// The server answered with `status: failed`.
     #[error("server error {code}: {message}")]
     Api { code: i32, message: String },
@@ -23,6 +23,12 @@ pub enum Error {
     /// The configured server URL is invalid.
     #[error("invalid server URL: {0}")]
     Url(#[from] url::ParseError),
+    /// The response was larger than the client reads.
+    #[error("response from {endpoint} is larger than {limit} bytes")]
+    TooLarge { endpoint: String, limit: u64 },
+    /// The TLS configuration could not be built.
+    #[error("TLS setup failed: {0}")]
+    Tls(String),
 }
 
 impl From<reqwest::Error> for Error {

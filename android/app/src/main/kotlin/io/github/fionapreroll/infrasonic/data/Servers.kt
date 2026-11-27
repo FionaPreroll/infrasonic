@@ -92,7 +92,13 @@ class Servers(
             Connection.Offline(p, null)
         } else {
             try {
-                Connection.Online(p, core.connect(p))
+                val status = core.connect(p)
+                // Trust on first use: from now on only this certificate is accepted.
+                val cert = status.certificate
+                if (p.allowSelfSigned && p.pinnedCertificate == null && cert != null) {
+                    save(p.copy(pinnedCertificate = cert))
+                }
+                Connection.Online(active() ?: p, status)
             } catch (e: FfiException.Network) {
                 core.connectOffline(p)
                 Connection.Offline(p, e.reason)

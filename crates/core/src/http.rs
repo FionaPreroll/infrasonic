@@ -220,7 +220,10 @@ async fn request(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("json") || v.contains("xml"));
     if is_doc {
-        let body = resp.bytes().await.unwrap_or_default();
+        // An error document is small; a server that sends more is not believed.
+        let body = infrasonic_subsonic::read_body(resp, "stream", 1024 * 1024)
+            .await
+            .unwrap_or_default();
         return Err(Failure::Final(
             match infrasonic_subsonic::parse_response::<()>("stream", &body, &[], false) {
                 Err(e) => e.to_string(),

@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Android release: on `android-vX.Y.Z` tags, build the store build (Google Play, F-Droid; no update
-# check, see android/app/src/store/) as signed APK and AAB, rebuild the APK
-# unsigned in another directory and check that both are the same apart from the signature
-# (the same check F-Droid makes), then publish them with checksums and build provenance.
-# A manual run without a tag only builds and checks reproducibility.
+# check, see android/app/src/store/) as unsigned APK and AAB, rebuild the APK in another directory,
+# sign APK and AAB in a job of their own, and check that the signed APK is the rebuild apart from
+# the signature (the same check F-Droid makes). Then publish them with checksums and build
+# provenance. A manual run without a tag builds, signs and checks, and publishes nothing.
+#
+# The signing key never meets the build: Gradle, its plugins and the crates' build scripts run
+# without it, and the job that signs runs nothing from the repository.
 name: Android release
 
 on:
@@ -23,22 +26,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - { kind: signed, dir: infrasonic, environment: android-release }
-          # Another path and no signing key: what F-Droid and anyone else would build.
+          - { kind: unsigned, dir: infrasonic }
+          # Another path: what F-Droid and anyone else would build.
           - { kind: rebuild, dir: elsewhere/src/infrasonic-rebuild }
-    # The signing secrets are environment secrets of android-release; the rebuild gets none.
-    environment: ${{ matrix.environment || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
       run:
         working-directory: ${{ matrix.dir }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: ${{ matrix.dir }}
+          persist-credentials: false
       - run: rustup show
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: 21
@@ -56,55 +58,86 @@ jobs:
           want=${GITHUB_REF_NAME#android-v}
           have=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' android/app/build.gradle.kts)
           [ "$want" = "$have" ] || { echo "tag $GITHUB_REF_NAME but appVersion $have" >&2; exit 1; }
-      - name: Signing key
-        if: matrix.kind == 'signed'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            if [ "$GITHUB_REF_TYPE" = tag ]; then echo "secret ANDROID_KEYSTORE_BASE64 missing" >&2; exit 1; fi
-            echo "no signing key: building unsigned"; exit 0
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          {
-            echo "INFRASONIC_KEYSTORE=$RUNNER_TEMP/release.jks"
-            echo "INFRASONIC_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "INFRASONIC_KEY_ALIAS=$KEY_ALIAS"
-            echo "INFRASONIC_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
-          } >> "$GITHUB_ENV"
       - name: Build
+        env:
+          KIND: ${{ matrix.kind }}
         run: |
           tasks=":app:assembleStoreRelease"
-          [ "${{ matrix.kind }}" = signed ] && tasks="$tasks :app:bundleStoreRelease"
+          [ "$KIND" = unsigned ] && tasks="$tasks :app:bundleStoreRelease"
           android/gradlew -p android $tasks --console=plain --no-build-cache
           v=$(sed -n 's/^val appVersion = "\(.*\)"/\1/p' android/app/build.gradle.kts)
           mkdir -p "$GITHUB_WORKSPACE/out"
-          apk=$(ls android/app/build/outputs/apk/store/release/*.apk)
-          suffix=""
-          [ -n "${INFRASONIC_KEYSTORE:-}" ] || suffix="-unsigned"
-          cp "$apk" "$GITHUB_WORKSPACE/out/infrasonic-android-$v$suffix.apk"
-          if [ -f android/app/build/outputs/bundle/storeRelease/app-store-release.aab ]; then
+          cp android/app/build/outputs/apk/store/release/app-store-release-unsigned.apk \
+            "$GITHUB_WORKSPACE/out/infrasonic-android-$v.apk"
+          if [ "$KIND" = unsigned ]; then
             cp android/app/build/outputs/bundle/storeRelease/app-store-release.aab "$GITHUB_WORKSPACE/out/infrasonic-android-$v.aab"
           fi
-      - uses: actions/upload-artifact@v4
+          sha256sum "$GITHUB_WORKSPACE"/out/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.kind }}
           path: out/
           retention-days: 30
 
-  verify:
-    name: Reproducible
+  # Only this job sees the signing key (environment android-release, which only main and
+  # android-v* tags may use). It runs the SDK's apksigner and the JDK's jarsigner, nothing from
+  # the repository. The APK keeps its layout (no v1 signature, alignment preserved), so that it
+  # is the unsigned build plus a signing block, which is what F-Droid's check expects.
+  sign:
+    name: Sign
     needs: build
     runs-on: ubuntu-24.04
+    environment: android-release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned
+          path: out
+      - name: Sign APK and AAB
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "secret ANDROID_KEYSTORE_BASE64 missing" >&2; exit 1; }
+          [ -n "$KEY_PASSWORD" ] || KEY_PASSWORD=$KEYSTORE_PASSWORD
+          export KEY_PASSWORD
+          ks="$RUNNER_TEMP/release.jks"
+          printf '%s' "$KEYSTORE" | base64 --decode > "$ks"
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          apk=$(ls out/*.apk) aab=$(ls out/*.aab)
+          "$tools/apksigner" sign --ks "$ks" --ks-pass env:KEYSTORE_PASSWORD --ks-key-alias "$KEY_ALIAS" \
+            --key-pass env:KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false --alignment-preserved true \
+            --out "$apk.signed" "$apk"
+          mv "$apk.signed" "$apk"
+          jarsigner=${JAVA_HOME:+$JAVA_HOME/bin/}jarsigner
+          "$jarsigner" -keystore "$ks" -storepass:env KEYSTORE_PASSWORD -keypass:env KEY_PASSWORD \
+            "$aab" "$KEY_ALIAS" >/dev/null
+          rm -f "$ks"
+          "$tools/apksigner" verify --print-certs "$apk" | grep -v -i "public key"
+          "$jarsigner" -verify "$aab" | grep -x "jar verified."
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed
+          path: out/
+          retention-days: 30
+
+  verify:
+    name: Reproducible
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned
+          path: unsigned
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: signed
           path: signed
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rebuild
           path: rebuild
@@ -113,13 +146,13 @@ jobs:
           pip install --user apksigcopier==1.1.1
           # apksigcopier calls apksigner, which is in the SDK's build tools, not on the PATH.
           export PATH="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1):$PATH"
-          s=$(ls signed/*.apk) r=$(ls rebuild/*.apk)
-          case "$s" in
-            *-unsigned.apk) cmp "$s" "$r" ;;
-            *) apksigcopier compare "$s" --unsigned "$r" ;;
-          esac
+          u=$(ls unsigned/*.apk) s=$(ls signed/*.apk) r=$(ls rebuild/*.apk)
+          # The build in another path is byte for byte the same.
+          cmp "$u" "$r"
+          # What F-Droid checks: the published APK is the rebuild plus the signature.
+          apksigcopier compare "$s" --unsigned "$r"
           echo "reproducible: $(sha256sum "$r")"
-          case "$s" in *-unsigned.apk) ;; *) apksigner verify --print-certs "$s" | grep -i "SHA-256" ;; esac
+          apksigner verify --print-certs "$s" | grep -i "SHA-256"
 
   release:
     name: Publish
@@ -131,12 +164,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: signed
           path: out
       - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: out/infrasonic-android-*
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
@@ -153,7 +186,7 @@ jobs:
     env:
       PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: env.PLAY_JSON != ''
         with:
           name: signed

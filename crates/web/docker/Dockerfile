@@ -5,7 +5,8 @@
 #   docker run -p 8080:8080 -e INFRASONIC_SERVER=https://music.example.org infrasonic-web
 #
 # The WebAssembly is the same on every platform, so it is built once on the build machine.
-FROM --platform=$BUILDPLATFORM rust:1-bookworm AS build
+# Base images by digest (Dependabot keeps them current, .github/dependabot.yml).
+FROM --platform=$BUILDPLATFORM rust:1-bookworm@sha256:75d26c23c24cc6ea1cdabf0714a6bff8fd7bf3248716043fd7ae86dac7f41b94 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY rust-toolchain.toml ./
@@ -19,7 +20,7 @@ RUN OUT=/site VERSION=$VERSION scripts/web.sh \
  && find /site -type f ! -name config.js \( -name '*.wasm' -o -name '*.js' -o -name '*.css' \
       -o -name '*.html' -o -name '*.svg' -o -name '*.webmanifest' \) -exec gzip -9 -k {} +
 
-FROM joseluisq/static-web-server:2-alpine
+FROM joseluisq/static-web-server:2-alpine@sha256:b3f7db31db9a68754205b3c0831fe5b066bd1daeb4f45aaa5007847a8c29ede2
 LABEL org.opencontainers.image.title="infrasonic-web" \
       org.opencontainers.image.description="Web player for Subsonic and OpenSubsonic servers" \
       org.opencontainers.image.source="https://github.com/FionaPreroll/infrasonic" \
