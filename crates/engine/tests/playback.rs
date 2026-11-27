@@ -311,6 +311,11 @@ fn transport_commands() {
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Stopped)
     });
+    // The snapshot is published a moment after the event (slow runners notice).
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while e.snapshot().position != 0.0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(e.snapshot().position, 0.0);
 }
 

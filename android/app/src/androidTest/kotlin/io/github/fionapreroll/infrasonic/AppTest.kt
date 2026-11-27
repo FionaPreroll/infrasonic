@@ -12,7 +12,7 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -55,6 +55,8 @@ class AppTest {
         }
     }
 
+    // v2: coroutines resume through a queue. With v1's unconfined dispatcher, a coroutine
+    // waiting for the Rust core resumed on the core's thread and ran UI code there (and crashed).
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
