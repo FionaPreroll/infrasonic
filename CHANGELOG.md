@@ -103,6 +103,8 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
 - All players: a paused player stays paused when the output device goes away, and pause works
   again at once; the Android app no longer hangs on "buffering" when a Bluetooth speaker is
   switched off.
+- All players: when the output device goes away during playback, the new one goes on exactly
+  where the old one stopped, instead of repeating the last moment.
 - Android: playback no longer crashes the app when it starts.
 - Android: the library loads after the first setup and at every start, instead of staying on
   "not connected".

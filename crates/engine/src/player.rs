@@ -1634,11 +1634,12 @@ impl Worker {
     }
 
     fn update_position(&mut self) {
-        if self.producer.is_some() && self.shared.has_failed() {
-            self.recover_output();
-            return;
-        }
-        if self.shared.flush_pending() {
+        let failed = self.producer.is_some() && self.shared.has_failed();
+        if failed {
+            // Nothing plays on: the position below is where the device got to, so the new one
+            // neither repeats nor skips what was played since the last turn.
+            self.stop_output();
+        } else if self.shared.flush_pending() {
             return;
         }
         let played = self.shared.played_frames();
@@ -1670,6 +1671,10 @@ impl Worker {
             if let Some(d) = seg.duration {
                 self.position = self.position.min(d);
             }
+        }
+        if failed {
+            self.recover_output();
+            return;
         }
         if self.waiting_next.is_some()
             && !self.tail.is_empty()

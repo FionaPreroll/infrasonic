@@ -351,9 +351,11 @@ fn equalizer_survives_a_new_output_device() {
     let starts = r.starts.lock().clone();
     assert_eq!(starts.len(), 2, "the output was not opened again");
     let left = r.left();
-    // Nothing is played twice or skipped (the old device's unplayed buffer is not counted).
+    // Nothing is played twice or skipped (the old device's unplayed buffer is not counted):
+    // the new device goes on from where the old one got, not from the engine's last turn
+    // (which repeated up to a turn of the loop, and more when the engine thread was slow).
     let secs = left.len() as f32 / RATE as f32;
-    assert!((secs - 3.0).abs() < 0.1, "played {secs} s");
+    assert!((secs - 3.0).abs() < 0.005, "played {secs} s");
     // The new device starts quietly and plays on with the equalizer.
     let new = &left[starts[1]..];
     assert!(new[0].abs() < AMP * 0.05, "new device starts at {}", new[0]);
