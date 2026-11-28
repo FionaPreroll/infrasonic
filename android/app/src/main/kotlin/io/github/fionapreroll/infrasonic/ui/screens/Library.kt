@@ -68,6 +68,8 @@ import io.github.fionapreroll.infrasonic.ui.Routes
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.Cover
 import io.github.fionapreroll.infrasonic.ui.components.Empty
+import io.github.fionapreroll.infrasonic.ui.components.FastScroll
+import io.github.fionapreroll.infrasonic.ui.components.initial
 import io.github.fionapreroll.infrasonic.ui.components.ErrorBox
 import io.github.fionapreroll.infrasonic.ui.components.Loader
 import io.github.fionapreroll.infrasonic.ui.components.rememberPage
@@ -220,11 +222,19 @@ private fun AlbumGrid(kind: AlbumListKind, tab: Any) {
         Empty(stringResource(R.string.no_albums))
         return
     }
-    LazyVerticalGrid(GridCells.Adaptive(150.dp), state = state, modifier = Modifier.padding(horizontal = 8.dp)) {
-        items(albums, key = { it.id }) { a ->
-            Tile(a.name, a.artist, a.coverArt) { nav.navigate(Routes.album(a.id)) }
+    // Sorted lists name the letter they are at; the others have nothing to name.
+    val label: ((Int) -> String?)? = when (kind) {
+        AlbumListKind.ByName -> { i -> initial(albums.getOrNull(i)?.name) }
+        AlbumListKind.ByArtist -> { i -> initial(albums.getOrNull(i)?.artist) }
+        else -> null
+    }
+    FastScroll(state, label = label) {
+        LazyVerticalGrid(GridCells.Adaptive(150.dp), state = state, modifier = Modifier.padding(horizontal = 8.dp)) {
+            items(albums, key = { it.id }) { a ->
+                Tile(a.name, a.artist, a.coverArt) { nav.navigate(Routes.album(a.id)) }
+            }
+            if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Text("…", Modifier.padding(16.dp)) }
         }
-        if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Text("…", Modifier.padding(16.dp)) }
     }
 }
 
@@ -237,16 +247,20 @@ fun ArtistsScreen() {
         val list = rememberLazyListState()
         ScrollToTopOnReselect(Routes.ARTISTS) { list.animateScrollToItem(0) }
         Loader(cache = "artists", load = { Graph.core.artists() }) { groups, _ ->
-            LazyColumn(state = list) {
-                groups.forEach { g ->
-                    item(key = "h" + g.name) { SectionTitle(g.name) }
-                    items(g.artists, key = { it.id }) { a ->
-                        ListItem(
-                            modifier = Modifier.clickable { nav.navigate(Routes.artist(a.id)) },
-                            leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 24.dp) },
-                            headlineContent = { Text(a.name) },
-                            supportingContent = a.albumCount?.let { n -> { Text(pluralAlbums(n.toInt())) } },
-                        )
+            // The index group of each row (header and artists), for the scroller bubble.
+            val letters = remember(groups) { groups.flatMap { g -> List(g.artists.size + 1) { g.name } } }
+            FastScroll(list, label = { letters.getOrNull(it) }) {
+                LazyColumn(state = list) {
+                    groups.forEach { g ->
+                        item(key = "h" + g.name) { SectionTitle(g.name) }
+                        items(g.artists, key = { it.id }) { a ->
+                            ListItem(
+                                modifier = Modifier.clickable { nav.navigate(Routes.artist(a.id)) },
+                                leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 24.dp) },
+                                headlineContent = { Text(a.name) },
+                                supportingContent = a.albumCount?.let { n -> { Text(pluralAlbums(n.toInt())) } },
+                            )
+                        }
                     }
                 }
             }
@@ -388,13 +402,16 @@ fun GenresScreen() {
     Screen(stringResource(R.string.genres)) {
         Loader(cache = "genres", load = { Graph.core.genres() }) { genres, _ ->
             if (genres.isEmpty()) Empty(stringResource(R.string.nothing_here))
-            LazyColumn {
-                items(genres, key = { it.name }) { g ->
-                    ListItem(
-                        modifier = Modifier.clickable { nav.navigate(Routes.genre(g.name)) },
-                        headlineContent = { Text(g.name) },
-                        supportingContent = g.albumCount?.let { n -> { Text(pluralAlbums(n.toInt())) } },
-                    )
+            val list = rememberLazyListState()
+            FastScroll(list, label = { initial(genres.getOrNull(it)?.name) }) {
+                LazyColumn(state = list) {
+                    items(genres, key = { it.name }) { g ->
+                        ListItem(
+                            modifier = Modifier.clickable { nav.navigate(Routes.genre(g.name)) },
+                            headlineContent = { Text(g.name) },
+                            supportingContent = g.albumCount?.let { n -> { Text(pluralAlbums(n.toInt())) } },
+                        )
+                    }
                 }
             }
         }
@@ -414,8 +431,11 @@ fun GenreScreen(name: String) {
         }) { Icon(Icons.Default.Shuffle, stringResource(R.string.shuffle)) }
     }) {
         Loader(name, cache = "genre/$name", load = { Graph.core.albumList(AlbumListKind.ByGenre(name), 200u, 0u) }) { albums, _ ->
-            LazyVerticalGrid(GridCells.Adaptive(150.dp), modifier = Modifier.padding(horizontal = 8.dp)) {
-                items(albums, key = { it.id }) { a -> Tile(a.name, a.artist, a.coverArt) { nav.navigate(Routes.album(a.id)) } }
+            val grid = rememberLazyGridState()
+            FastScroll(grid) {
+                LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    items(albums, key = { it.id }) { a -> Tile(a.name, a.artist, a.coverArt) { nav.navigate(Routes.album(a.id)) } }
+                }
             }
         }
     }
@@ -436,16 +456,20 @@ fun FolderScreen(id: String?) {
                 IconButton(onClick = { Downloads.enqueue(context, listOf("folder:$id")) }) { Icon(Icons.Default.Download, stringResource(R.string.download)) }
             }
         }) {
-            LazyColumn {
-                items(folder.folders, key = { "d" + it.id }) { f ->
-                    ListItem(
-                        modifier = Modifier.clickable { nav.navigate(Routes.folder(f.id)) },
-                        leadingContent = { Cover(f.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
-                        headlineContent = { Text(f.name) },
-                    )
-                }
-                itemsIndexed(folder.songs, key = { _, s -> "s" + s.id }) { i, s ->
-                    SongRow(s, onClick = { Graph.player.play(folder.songs, i) })
+            val list = rememberLazyListState()
+            // Folders are sorted by name; songs come in their own order and get no letter.
+            FastScroll(list, label = { initial(folder.folders.getOrNull(it)?.name) }) {
+                LazyColumn(state = list) {
+                    items(folder.folders, key = { "d" + it.id }) { f ->
+                        ListItem(
+                            modifier = Modifier.clickable { nav.navigate(Routes.folder(f.id)) },
+                            leadingContent = { Cover(f.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
+                            headlineContent = { Text(f.name) },
+                        )
+                    }
+                    itemsIndexed(folder.songs, key = { _, s -> "s" + s.id }) { i, s ->
+                        SongRow(s, onClick = { Graph.player.play(folder.songs, i) })
+                    }
                 }
             }
         }

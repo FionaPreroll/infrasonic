@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Add
@@ -80,6 +81,7 @@ import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
 import io.github.fionapreroll.infrasonic.ui.components.Cover
 import io.github.fionapreroll.infrasonic.ui.components.Empty
+import io.github.fionapreroll.infrasonic.ui.components.FastScroll
 import io.github.fionapreroll.infrasonic.ui.components.ErrorBox
 import io.github.fionapreroll.infrasonic.ui.components.Loader
 import io.github.fionapreroll.infrasonic.ui.components.SongRow
@@ -196,7 +198,9 @@ fun PodcastScreen(id: String) {
         Screen(c.title, actions = {
             IconButton(onClick = { deleting = true }) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
         }) {
-            LazyColumn {
+            val list = rememberLazyListState()
+            FastScroll(list) {
+            LazyColumn(state = list) {
                 c.description?.takeIf { it.isNotBlank() }?.let { d ->
                     item {
                         Text(
@@ -209,6 +213,7 @@ fun PodcastScreen(id: String) {
                     }
                 }
                 items(c.episodes, key = { it.id }) { e -> EpisodeRow(e) { tick++ } }
+            }
             }
         }
         if (deleting) {
@@ -380,7 +385,9 @@ fun DownloadsScreen(back: Boolean = true) {
             Empty(stringResource(R.string.no_downloads))
             return@Screen
         }
-        LazyColumn {
+        val list = rememberLazyListState()
+        FastScroll(list) {
+        LazyColumn(state = list) {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { Graph.player.play(songs) }) {
@@ -394,6 +401,7 @@ fun DownloadsScreen(back: Boolean = true) {
                 }
             }
             itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, onClick = { Graph.player.play(songs, i) }) }
+        }
         }
     }
     if (clearing) {

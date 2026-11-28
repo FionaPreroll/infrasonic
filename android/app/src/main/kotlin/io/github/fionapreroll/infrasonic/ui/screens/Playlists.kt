@@ -53,6 +53,7 @@ import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
 import io.github.fionapreroll.infrasonic.ui.components.Cover
 import io.github.fionapreroll.infrasonic.ui.components.Empty
+import io.github.fionapreroll.infrasonic.ui.components.FastScroll
 import io.github.fionapreroll.infrasonic.ui.components.ErrorBox
 import io.github.fionapreroll.infrasonic.ui.components.Loader
 import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
@@ -120,7 +121,9 @@ fun PlaylistScreen(id: String) {
             IconButton(onClick = { renaming = true }) { Icon(Icons.Default.Edit, stringResource(R.string.rename)) }
             IconButton(onClick = { deleting = true }) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
         }) {
-            LazyColumn {
+            val list = rememberLazyListState()
+            FastScroll(list) {
+            LazyColumn(state = list) {
                 item {
                     p.comment?.takeIf { it.isNotBlank() }?.let { Text(it, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium) }
                     PlayButtons(p.songs)
@@ -136,6 +139,7 @@ fun PlaylistScreen(id: String) {
                         })
                     })
                 }
+            }
             }
         }
         if (renaming) {

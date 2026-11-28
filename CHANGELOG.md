@@ -73,6 +73,9 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
 - Android: pages shown before open instantly from a memory cache and refresh in the background;
   the cover cache has a size limit (default 250 MB), and a new Storage section in the settings
   shows and limits what songs, covers and downloads use.
+- Android: long lists get a fast scroller: a thumb on the right edge to drag anywhere in the
+  list, with the current letter in a bubble for artists, genres, folders and albums by name or
+  artist.
 
 ### Changed
 
