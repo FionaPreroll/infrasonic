@@ -74,9 +74,10 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
 - Android: pages shown before open instantly from a memory cache and refresh in the background;
   the cover cache has a size limit (default 250 MB), and a new Storage section in the settings
   shows and limits what songs, covers and downloads use.
-- Android: long lists get a fast scroller: a thumb on the right edge to drag anywhere in the
-  list, with the current letter in a bubble for artists, genres, folders and albums by name or
-  artist.
+- Android: every long list gets a fast scroller (library, playlists, search, queue, podcasts,
+  bookmarks, shares, jukebox): a thumb on the right edge to drag anywhere in the list, with the
+  current letter in a bubble for artists, genres, folders and albums by name or artist, and the
+  section for search results.
 - Android: a visualizer (the button in the player) shows MilkDrop presets that follow what
   plays, without the microphone permission. 24 presets come with the app; the full Cream of
   the Crop collection (about 9,000 presets, 31 MB) is downloaded only on request in Settings ›

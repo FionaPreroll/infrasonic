@@ -36,8 +36,8 @@ class FastScrollTest {
 
     @Test
     fun onlyLongListsGetAScroller() {
-        assertFalse(wantsScroller(25, 10))
-        assertTrue(wantsScroller(31, 10))
+        assertFalse(wantsScroller(20, 10))
+        assertTrue(wantsScroller(21, 10))
         assertFalse(wantsScroller(100, 0))
     }
 

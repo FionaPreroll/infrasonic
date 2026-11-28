@@ -160,18 +160,21 @@ fun PodcastsScreen() {
                 Empty(stringResource(R.string.no_podcasts))
                 return@Loader
             }
-            LazyColumn {
-                items(channels, key = { it.id }) { c ->
-                    ListItem(
-                        modifier = Modifier.clickable { nav.navigate(Routes.podcast(c.id)) },
-                        leadingContent = { Cover(c.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
-                        headlineContent = { Text(c.title.ifEmpty { c.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = c.error?.let { { Text(it, color = MaterialTheme.colorScheme.error, maxLines = 2) } },
-                    )
-                }
-                if (newest.isNotEmpty()) {
-                    item { io.github.fionapreroll.infrasonic.ui.components.SectionTitle(stringResource(R.string.newest_episodes)) }
-                    items(newest, key = { "n" + it.id }) { e -> EpisodeRow(e) { tick++ } }
+            val list = rememberLazyListState()
+            FastScroll(list) {
+                LazyColumn(state = list) {
+                    items(channels, key = { it.id }) { c ->
+                        ListItem(
+                            modifier = Modifier.clickable { nav.navigate(Routes.podcast(c.id)) },
+                            leadingContent = { Cover(c.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
+                            headlineContent = { Text(c.title.ifEmpty { c.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = c.error?.let { { Text(it, color = MaterialTheme.colorScheme.error, maxLines = 2) } },
+                        )
+                    }
+                    if (newest.isNotEmpty()) {
+                        item { io.github.fionapreroll.infrasonic.ui.components.SectionTitle(stringResource(R.string.newest_episodes)) }
+                        items(newest, key = { "n" + it.id }) { e -> EpisodeRow(e) { tick++ } }
+                    }
                 }
             }
         }
@@ -274,28 +277,31 @@ fun BookmarksScreen() {
                 Empty(stringResource(R.string.no_bookmarks))
                 return@Loader
             }
-            LazyColumn {
-                items(list, key = { it.song.id }) { b ->
-                    val pos = b.positionMs.toDouble() / 1000
-                    ListItem(
-                        modifier = Modifier.clickable {
-                            Graph.player.setQueue(listOf(b.song), 0, pos)
-                            Graph.player.command(PlayerCommand.Play)
-                        },
-                        leadingContent = { Cover(b.song.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
-                        headlineContent = { Text(b.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = {
-                            Text(listOfNotNull(formatTime(pos), b.song.artist, b.comment).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        trailingContent = {
-                            IconButton(onClick = {
-                                scope.launch {
-                                    runCatching { Graph.core.deleteBookmark(b.song.id) }.onFailure { context.toast(it) }
-                                    tick++
-                                }
-                            }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
-                        },
-                    )
+            val scroll = rememberLazyListState()
+            FastScroll(scroll) {
+                LazyColumn(state = scroll) {
+                    items(list, key = { it.song.id }) { b ->
+                        val pos = b.positionMs.toDouble() / 1000
+                        ListItem(
+                            modifier = Modifier.clickable {
+                                Graph.player.setQueue(listOf(b.song), 0, pos)
+                                Graph.player.command(PlayerCommand.Play)
+                            },
+                            leadingContent = { Cover(b.song.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
+                            headlineContent = { Text(b.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = {
+                                Text(listOfNotNull(formatTime(pos), b.song.artist, b.comment).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            trailingContent = {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        runCatching { Graph.core.deleteBookmark(b.song.id) }.onFailure { context.toast(it) }
+                                        tick++
+                                    }
+                                }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -313,36 +319,39 @@ fun SharesScreen() {
                 Empty(stringResource(R.string.no_shares))
                 return@Loader
             }
-            LazyColumn {
-                items(list, key = { it.id }) { s ->
-                    ListItem(
-                        headlineContent = {
-                            Text(s.description?.ifBlank { null } ?: s.songs.firstOrNull()?.title ?: s.url, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        supportingContent = {
-                            Column {
-                                Text(s.url, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                                Text(
-                                    listOfNotNull(
-                                        stringResource(R.string.visits, s.visitCount.toInt()),
-                                        s.expires?.take(10)?.let { stringResource(R.string.expires, it) },
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        },
-                        trailingContent = {
-                            Row {
-                                IconButton(onClick = { copy(context, s.url) }) { Icon(Icons.Default.ContentCopy, stringResource(R.string.copy_link)) }
-                                IconButton(onClick = {
-                                    scope.launch {
-                                        runCatching { Graph.core.deleteShare(s.id) }.onFailure { context.toast(it) }
-                                        tick++
-                                    }
-                                }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
-                            }
-                        },
-                    )
+            val scroll = rememberLazyListState()
+            FastScroll(scroll) {
+                LazyColumn(state = scroll) {
+                    items(list, key = { it.id }) { s ->
+                        ListItem(
+                            headlineContent = {
+                                Text(s.description?.ifBlank { null } ?: s.songs.firstOrNull()?.title ?: s.url, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            supportingContent = {
+                                Column {
+                                    Text(s.url, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        listOfNotNull(
+                                            stringResource(R.string.visits, s.visitCount.toInt()),
+                                            s.expires?.take(10)?.let { stringResource(R.string.expires, it) },
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row {
+                                    IconButton(onClick = { copy(context, s.url) }) { Icon(Icons.Default.ContentCopy, stringResource(R.string.copy_link)) }
+                                    IconButton(onClick = {
+                                        scope.launch {
+                                            runCatching { Graph.core.deleteShare(s.id) }.onFailure { context.toast(it) }
+                                            tick++
+                                        }
+                                    }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -473,19 +482,22 @@ fun JukeboxScreen() {
             Empty(stringResource(R.string.queue_empty))
             return@Screen
         }
-        LazyColumn {
-            itemsIndexed(s.songs) { i, song ->
-                val current = s.currentIndex?.toInt() == i
-                ListItem(
-                    modifier = Modifier.clickable { send(JukeboxCommand.Skip(i.toUInt(), 0u)) },
-                    headlineContent = {
-                        Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                    },
-                    supportingContent = { Text(song.artist, maxLines = 1) },
-                    trailingContent = {
-                        IconButton(onClick = { send(JukeboxCommand.Remove(i.toUInt())) }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
-                    },
-                )
+        val list = rememberLazyListState()
+        FastScroll(list) {
+            LazyColumn(state = list) {
+                itemsIndexed(s.songs) { i, song ->
+                    val current = s.currentIndex?.toInt() == i
+                    ListItem(
+                        modifier = Modifier.clickable { send(JukeboxCommand.Skip(i.toUInt(), 0u)) },
+                        headlineContent = {
+                            Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        },
+                        supportingContent = { Text(song.artist, maxLines = 1) },
+                        trailingContent = {
+                            IconButton(onClick = { send(JukeboxCommand.Remove(i.toUInt())) }) { Icon(Icons.Default.Close, stringResource(R.string.remove)) }
+                        },
+                    )
+                }
             }
         }
     }

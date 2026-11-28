@@ -80,17 +80,19 @@ fun PlaylistsScreen() {
         ScrollToTopOnReselect(Routes.PLAYLISTS) { list.animateScrollToItem(0) }
         Loader(tick, cache = "playlists", load = { Graph.core.playlists() }) { lists, _ ->
             if (lists.isEmpty()) Empty(stringResource(R.string.no_playlists))
-            LazyColumn(state = list) {
-                items(lists, key = { it.id }) { p ->
-                    ListItem(
-                        modifier = Modifier.clickable { nav.navigate(Routes.playlist(p.id)) },
-                        leadingContent = { Cover(p.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
-                        headlineContent = { Text(p.name) },
-                        supportingContent = {
-                            val n = p.songCount?.toInt() ?: 0
-                            Text(listOfNotNull(pluralStringResource(R.plurals.songs_count, n, n), p.owner).joinToString(" · "))
-                        },
-                    )
+            FastScroll(list) {
+                LazyColumn(state = list) {
+                    items(lists, key = { it.id }) { p ->
+                        ListItem(
+                            modifier = Modifier.clickable { nav.navigate(Routes.playlist(p.id)) },
+                            leadingContent = { Cover(p.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
+                            headlineContent = { Text(p.name) },
+                            supportingContent = {
+                                val n = p.songCount?.toInt() ?: 0
+                                Text(listOfNotNull(pluralStringResource(R.plurals.songs_count, n, n), p.owner).joinToString(" · "))
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -199,27 +201,36 @@ fun SearchScreen() {
             Empty(stringResource(R.string.no_results))
             return@Screen
         }
-        LazyColumn(state = list) {
-            if (r.artists.isNotEmpty()) item { SectionTitle(stringResource(R.string.artists)) }
-            items(r.artists, key = { "a" + it.id }) { a ->
-                ListItem(
-                    modifier = Modifier.clickable { nav.navigate(Routes.artist(a.id)) },
-                    leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 24.dp) },
-                    headlineContent = { Text(a.name) },
-                )
+        // The bubble names the section the top row belongs to.
+        val sectionNames = listOf(stringResource(R.string.artists), stringResource(R.string.albums), stringResource(R.string.songs))
+        val searchSections = remember(r, sectionNames) {
+            listOf(r.artists.size, r.albums.size, r.songs.size).zip(sectionNames)
+                .filter { (n, _) -> n > 0 }
+                .flatMap { (n, name) -> List(n + 1) { name } }
+        }
+        FastScroll(list, label = { searchSections.getOrNull(it) ?: searchSections.lastOrNull() }) {
+            LazyColumn(state = list) {
+                if (r.artists.isNotEmpty()) item { SectionTitle(stringResource(R.string.artists)) }
+                items(r.artists, key = { "a" + it.id }) { a ->
+                    ListItem(
+                        modifier = Modifier.clickable { nav.navigate(Routes.artist(a.id)) },
+                        leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 24.dp) },
+                        headlineContent = { Text(a.name) },
+                    )
+                }
+                if (r.albums.isNotEmpty()) item { SectionTitle(stringResource(R.string.albums)) }
+                items(r.albums, key = { "b" + it.id }) { a ->
+                    ListItem(
+                        modifier = Modifier.clickable { nav.navigate(Routes.album(a.id)) },
+                        leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
+                        headlineContent = { Text(a.name) },
+                        supportingContent = a.artist?.let { { Text(it) } },
+                    )
+                }
+                if (r.songs.isNotEmpty()) item { SectionTitle(stringResource(R.string.songs)) }
+                itemsIndexed(r.songs, key = { _, s -> "s" + s.id }) { i, s -> SongRow(s, onClick = { Graph.player.play(r.songs, i) }) }
+                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
             }
-            if (r.albums.isNotEmpty()) item { SectionTitle(stringResource(R.string.albums)) }
-            items(r.albums, key = { "b" + it.id }) { a ->
-                ListItem(
-                    modifier = Modifier.clickable { nav.navigate(Routes.album(a.id)) },
-                    leadingContent = { Cover(a.coverArt, Modifier.size(48.dp), size = 96, corner = 4.dp) },
-                    headlineContent = { Text(a.name) },
-                    supportingContent = a.artist?.let { { Text(it) } },
-                )
-            }
-            if (r.songs.isNotEmpty()) item { SectionTitle(stringResource(R.string.songs)) }
-            itemsIndexed(r.songs, key = { _, s -> "s" + s.id }) { i, s -> SongRow(s, onClick = { Graph.player.play(r.songs, i) }) }
-            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
         }
     }
 }

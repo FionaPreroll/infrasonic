@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -67,8 +69,8 @@ fun jumpIndex(fraction: Float, total: Int, visible: Int): Int {
     return (fraction.coerceIn(0f, 1f) * range).roundToInt().coerceIn(0, total - 1)
 }
 
-/** Only lists of several screens get a scroller; for shorter ones a flick is enough. */
-fun wantsScroller(total: Int, visible: Int) = visible > 0 && total > visible * 3
+/** Lists of more than two screens get a scroller; for shorter ones a flick is enough. */
+fun wantsScroller(total: Int, visible: Int) = visible > 0 && total > visible * 2
 
 /** A list and its fast scroller: what the thumb needs to read and move it. */
 private interface Scrollable {
@@ -230,7 +232,8 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
                         val y = top() + (THUMB_HEIGHT - bubble).toPx() / 2
                         IntOffset(-(TRACK_WIDTH + 8.dp).roundToPx(), y.roundToInt().coerceAtLeast(0))
                     }
-                    .size(bubble)
+                    .heightIn(min = bubble)
+                    .widthIn(min = bubble)
                     .background(
                         MaterialTheme.colorScheme.primaryContainer,
                         RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp, bottomStart = 32.dp, bottomEnd = 4.dp),
@@ -239,7 +242,9 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
             ) {
                 Text(
                     text,
-                    style = MaterialTheme.typography.headlineMedium,
+                    // A letter is big; a section name ("Albums") gets room beside it.
+                    Modifier.padding(horizontal = if (text.length > 2) 16.dp else 0.dp),
+                    style = if (text.length > 2) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     textAlign = TextAlign.Center,
                     maxLines = 1,

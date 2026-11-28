@@ -282,25 +282,28 @@ fun ArtistScreen(id: String) {
                 Icon(Icons.Default.Download, stringResource(R.string.download))
             }
         }) {
-            LazyVerticalGrid(GridCells.Adaptive(150.dp), modifier = Modifier.padding(horizontal = 8.dp)) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = {
-                            scope.launch { runCatching { Graph.core.artistSongs(id) }.onSuccess { Graph.player.play(it) }.onFailure { context.toast(it) } }
-                        }) { Icon(Icons.Default.PlayArrow, null); Text(stringResource(R.string.play)) }
-                        FilledTonalButton(onClick = {
-                            scope.launch { runCatching { Graph.core.artistSongs(id) }.onSuccess { Graph.player.playShuffled(it) }.onFailure { context.toast(it) } }
-                        }) { Icon(Icons.Default.Shuffle, null); Text(stringResource(R.string.shuffle)) }
-                        FilledTonalButton(onClick = {
-                            scope.launch { runCatching { Graph.core.artistRadio(id, 50u) }.onSuccess { Graph.player.play(it) }.onFailure { context.toast(it) } }
-                        }) { Icon(Icons.Default.Radio, null); Text(stringResource(R.string.radio)) }
+            val grid = rememberLazyGridState()
+            FastScroll(grid) {
+                LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = {
+                                scope.launch { runCatching { Graph.core.artistSongs(id) }.onSuccess { Graph.player.play(it) }.onFailure { context.toast(it) } }
+                            }) { Icon(Icons.Default.PlayArrow, null); Text(stringResource(R.string.play)) }
+                            FilledTonalButton(onClick = {
+                                scope.launch { runCatching { Graph.core.artistSongs(id) }.onSuccess { Graph.player.playShuffled(it) }.onFailure { context.toast(it) } }
+                            }) { Icon(Icons.Default.Shuffle, null); Text(stringResource(R.string.shuffle)) }
+                            FilledTonalButton(onClick = {
+                                scope.launch { runCatching { Graph.core.artistRadio(id, 50u) }.onSuccess { Graph.player.play(it) }.onFailure { context.toast(it) } }
+                            }) { Icon(Icons.Default.Radio, null); Text(stringResource(R.string.radio)) }
+                        }
                     }
+                    items(artist.albums, key = { it.id }) { a ->
+                        Tile(a.name, a.year?.toString(), a.coverArt) { nav.navigate(Routes.album(a.id)) }
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) { TopSongs(artist.name) }
+                    item(span = { GridItemSpan(maxLineSpan) }) { ArtistBio(id) }
                 }
-                items(artist.albums, key = { it.id }) { a ->
-                    Tile(a.name, a.year?.toString(), a.coverArt) { nav.navigate(Routes.album(a.id)) }
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) { TopSongs(artist.name) }
-                item(span = { GridItemSpan(maxLineSpan) }) { ArtistBio(id) }
             }
         }
     }
@@ -354,30 +357,33 @@ fun AlbumScreen(id: String) {
             }
         }) {
             val multiDisc = album.songs.mapNotNull { it.disc }.distinct().size > 1
-            LazyColumn {
-                item {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Cover(album.coverArt, Modifier.size(128.dp), size = 512)
-                        Column(Modifier.padding(start = 16.dp)) {
-                            Text(album.name, style = MaterialTheme.typography.titleLarge)
-                            album.artist?.let { a ->
+            val list = rememberLazyListState()
+            FastScroll(list) {
+                LazyColumn(state = list) {
+                    item {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Cover(album.coverArt, Modifier.size(128.dp), size = 512)
+                            Column(Modifier.padding(start = 16.dp)) {
+                                Text(album.name, style = MaterialTheme.typography.titleLarge)
+                                album.artist?.let { a ->
+                                    Text(
+                                        a,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable(enabled = album.artistId != null) { album.artistId?.let { nav.navigate(Routes.artist(it)) } },
+                                    )
+                                }
                                 Text(
-                                    a,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable(enabled = album.artistId != null) { album.artistId?.let { nav.navigate(Routes.artist(it)) } },
+                                    listOfNotNull(album.year?.toString(), album.genre, formatTime(album.duration?.toDouble())).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
                                 )
                             }
-                            Text(
-                                listOfNotNull(album.year?.toString(), album.genre, formatTime(album.duration?.toDouble())).joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
                         }
+                        PlayButtons(album.songs)
                     }
-                    PlayButtons(album.songs)
-                }
-                itemsIndexed(album.songs, key = { _, s -> s.id }) { i, s ->
-                    val n = listOfNotNull(s.disc?.takeIf { multiDisc }, s.track).joinToString(".")
-                    SongRow(s, onClick = { Graph.player.play(album.songs, i) }, leading = n.ifEmpty { "${i + 1}" })
+                    itemsIndexed(album.songs, key = { _, s -> s.id }) { i, s ->
+                        val n = listOfNotNull(s.disc?.takeIf { multiDisc }, s.track).joinToString(".")
+                        SongRow(s, onClick = { Graph.player.play(album.songs, i) }, leading = n.ifEmpty { "${i + 1}" })
+                    }
                 }
             }
         }

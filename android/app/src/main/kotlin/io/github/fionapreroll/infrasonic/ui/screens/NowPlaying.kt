@@ -79,6 +79,7 @@ import io.github.fionapreroll.infrasonic.ui.Routes
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.Cover
 import io.github.fionapreroll.infrasonic.ui.components.Empty
+import io.github.fionapreroll.infrasonic.ui.components.FastScroll
 import io.github.fionapreroll.infrasonic.ui.components.TextInputDialog
 import io.github.fionapreroll.infrasonic.ui.components.formatTime
 import io.github.fionapreroll.infrasonic.ui.navBarPadding
@@ -339,83 +340,85 @@ private fun QueuePane() {
         var dragOffset by remember { mutableFloatStateOf(0f) }
         var rowHeight by remember { mutableFloatStateOf(1f) }
         val target = dragged?.let { dropTarget(it, dragOffset, rowHeight, queue.size) }
-        LazyColumn(Modifier.fillMaxSize(), state = list) {
-            itemsIndexed(queue, key = { _, q -> q.uid.toLong() }) { i, q ->
-                val current = st?.index?.toInt() == i
-                val d = dragged
-                // The dragged row follows the finger; the rows it passes make room.
-                val shift = when {
-                    d == null || target == null -> 0f
-                    i == d -> dragOffset
-                    d < target && i in d + 1..target -> -rowHeight
-                    target < d && i in target until d -> rowHeight
-                    else -> 0f
-                }
-                val moveUp = stringResource(R.string.move_up)
-                val moveDown = stringResource(R.string.move_down)
-                ListItem(
-                    modifier = Modifier
-                        .onSizeChanged { rowHeight = it.height.toFloat() }
-                        .zIndex(if (i == d) 1f else 0f)
-                        .graphicsLayer {
-                            translationY = shift
-                            shadowElevation = if (i == d) 8f else 0f
-                        }
-                        .semantics {
-                            customActions = listOfNotNull(
-                                CustomAccessibilityAction(moveUp) {
-                                    Graph.player.command(PlayerCommand.Move(i.toUInt(), (i - 1).toUInt()))
-                                    true
-                                }.takeIf { i > 0 },
-                                CustomAccessibilityAction(moveDown) {
-                                    Graph.player.command(PlayerCommand.Move(i.toUInt(), (i + 1).toUInt()))
-                                    true
-                                }.takeIf { i < queue.size - 1 },
-                            )
-                        }
-                        .clickable { Graph.player.command(PlayerCommand.PlayIndex(i.toUInt())) },
-                    colors = if (current) ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else ListItemDefaults.colors(),
-                    leadingContent = { Cover(q.song.coverArt, Modifier.size(40.dp), size = 96, corner = 4.dp) },
-                    headlineContent = {
-                        Text(q.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else null)
-                    },
-                    supportingContent = { Text(q.song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    trailingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { Graph.player.command(PlayerCommand.Remove(i.toUInt())) }) {
-                                Icon(Icons.Default.Close, stringResource(R.string.remove))
+        FastScroll(list) {
+            LazyColumn(Modifier.fillMaxSize(), state = list) {
+                itemsIndexed(queue, key = { _, q -> q.uid.toLong() }) { i, q ->
+                    val current = st?.index?.toInt() == i
+                    val d = dragged
+                    // The dragged row follows the finger; the rows it passes make room.
+                    val shift = when {
+                        d == null || target == null -> 0f
+                        i == d -> dragOffset
+                        d < target && i in d + 1..target -> -rowHeight
+                        target < d && i in target until d -> rowHeight
+                        else -> 0f
+                    }
+                    val moveUp = stringResource(R.string.move_up)
+                    val moveDown = stringResource(R.string.move_down)
+                    ListItem(
+                        modifier = Modifier
+                            .onSizeChanged { rowHeight = it.height.toFloat() }
+                            .zIndex(if (i == d) 1f else 0f)
+                            .graphicsLayer {
+                                translationY = shift
+                                shadowElevation = if (i == d) 8f else 0f
                             }
-                            Icon(
-                                Icons.Default.DragHandle,
-                                stringResource(R.string.drag_to_move),
-                                Modifier.padding(8.dp).testTag("drag-$i").pointerInput(q.uid) {
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            dragged = queue.indexOfFirst { it.uid == q.uid }
-                                            dragOffset = 0f
-                                        },
-                                        onDragEnd = {
-                                            val from = dragged
-                                            if (from != null) {
-                                                val to = dropTarget(from, dragOffset, rowHeight, queue.size)
-                                                if (to != from) Graph.player.command(PlayerCommand.Move(from.toUInt(), to.toUInt()))
-                                            }
-                                            dragged = null
-                                            dragOffset = 0f
-                                        },
-                                        onDragCancel = {
-                                            dragged = null
-                                            dragOffset = 0f
-                                        },
-                                    ) { change, amount ->
-                                        change.consume()
-                                        dragOffset += amount.y
-                                    }
-                                },
-                            )
-                        }
-                    },
-                )
+                            .semantics {
+                                customActions = listOfNotNull(
+                                    CustomAccessibilityAction(moveUp) {
+                                        Graph.player.command(PlayerCommand.Move(i.toUInt(), (i - 1).toUInt()))
+                                        true
+                                    }.takeIf { i > 0 },
+                                    CustomAccessibilityAction(moveDown) {
+                                        Graph.player.command(PlayerCommand.Move(i.toUInt(), (i + 1).toUInt()))
+                                        true
+                                    }.takeIf { i < queue.size - 1 },
+                                )
+                            }
+                            .clickable { Graph.player.command(PlayerCommand.PlayIndex(i.toUInt())) },
+                        colors = if (current) ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else ListItemDefaults.colors(),
+                        leadingContent = { Cover(q.song.coverArt, Modifier.size(40.dp), size = 96, corner = 4.dp) },
+                        headlineContent = {
+                            Text(q.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (current) FontWeight.Bold else null)
+                        },
+                        supportingContent = { Text(q.song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { Graph.player.command(PlayerCommand.Remove(i.toUInt())) }) {
+                                    Icon(Icons.Default.Close, stringResource(R.string.remove))
+                                }
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    stringResource(R.string.drag_to_move),
+                                    Modifier.padding(8.dp).testTag("drag-$i").pointerInput(q.uid) {
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                dragged = queue.indexOfFirst { it.uid == q.uid }
+                                                dragOffset = 0f
+                                            },
+                                            onDragEnd = {
+                                                val from = dragged
+                                                if (from != null) {
+                                                    val to = dropTarget(from, dragOffset, rowHeight, queue.size)
+                                                    if (to != from) Graph.player.command(PlayerCommand.Move(from.toUInt(), to.toUInt()))
+                                                }
+                                                dragged = null
+                                                dragOffset = 0f
+                                            },
+                                            onDragCancel = {
+                                                dragged = null
+                                                dragOffset = 0f
+                                            },
+                                        ) { change, amount ->
+                                            change.consume()
+                                            dragOffset += amount.y
+                                        }
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
             }
         }
     }
