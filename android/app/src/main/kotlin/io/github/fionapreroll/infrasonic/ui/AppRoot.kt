@@ -94,7 +94,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -103,6 +108,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import io.github.fionapreroll.infrasonic.core.PlayerCommand
+
+/** Page cross-fade; navigation's default is 700 ms, which feels slow. */
+private const val PAGE_FADE_MS = 250
 
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("no navigation") }
 
@@ -208,7 +216,14 @@ fun AppRoot() {
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
                 if (!fullScreen) ConnectionBanner()
-                NavHost(nav, start, Modifier.weight(1f)) {
+                val animate by Graph.prefs.pageTransitions.flow.collectAsState()
+                NavHost(
+                    nav,
+                    start,
+                    Modifier.weight(1f),
+                    enterTransition = { if (animate) fadeIn(tween(PAGE_FADE_MS)) else EnterTransition.None },
+                    exitTransition = { if (animate) fadeOut(tween(PAGE_FADE_MS)) else ExitTransition.None },
+                ) {
                     composable(Routes.HOME) { HomeScreen() }
                     composable(Routes.ARTISTS) { ArtistsScreen() }
                     composable(Routes.PLAYLISTS) { PlaylistsScreen() }

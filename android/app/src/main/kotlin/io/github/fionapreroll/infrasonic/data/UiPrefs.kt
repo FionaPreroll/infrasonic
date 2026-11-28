@@ -41,6 +41,9 @@ class UiPrefs(context: Context) {
     ) { v -> sp.edit { putString("theme", v.name) } }
     val dynamicColor = boolPref("dynamic_color", true)
 
+    /** Fade between pages; off switches pages without animation. */
+    val pageTransitions = boolPref("page_transitions", true)
+
     /** Kbit/s, 0 = original file. */
     val wifiBitRate = intPref("wifi_bit_rate", 0)
     val mobileBitRate = intPref("mobile_bit_rate", 192)

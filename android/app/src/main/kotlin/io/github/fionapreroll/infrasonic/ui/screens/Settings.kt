@@ -68,6 +68,7 @@ fun SettingsScreen() {
     }
     val theme by prefs.theme.flow.collectAsState()
     val dynamic by prefs.dynamicColor.flow.collectAsState()
+    val transitions by prefs.pageTransitions.flow.collectAsState()
     val wifi by prefs.wifiBitRate.flow.collectAsState()
     val mobile by prefs.mobileBitRate.flow.collectAsState()
     val pin by prefs.pinBitRate.flow.collectAsState()
@@ -105,6 +106,7 @@ fun SettingsScreen() {
             if (Build.VERSION.SDK_INT >= 31) {
                 Toggle(stringResource(R.string.dynamic_color), stringResource(R.string.dynamic_color_hint), dynamic) { prefs.dynamicColor.value = it }
             }
+            Toggle(stringResource(R.string.page_transitions), stringResource(R.string.page_transitions_hint), transitions) { prefs.pageTransitions.value = it }
             val languages = listOf("", "en", "de")
             val current = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-')
             Choice(

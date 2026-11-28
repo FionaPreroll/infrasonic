@@ -163,6 +163,8 @@ S = {
     "theme_black": ("Black (OLED)", "Schwarz (OLED)"),
     "dynamic_color": ("Colors from wallpaper", "Farben vom Hintergrundbild"),
     "dynamic_color_hint": ("Material You", "Material You"),
+    "page_transitions": ("Page transitions", "Seitenübergänge"),
+    "page_transitions_hint": ("Fade between pages", "Seiten weich überblenden"),
     "language": ("Language", "Sprache"),
     "language_system": ("System", "System"),
     "quality": ("Quality", "Qualität"),
