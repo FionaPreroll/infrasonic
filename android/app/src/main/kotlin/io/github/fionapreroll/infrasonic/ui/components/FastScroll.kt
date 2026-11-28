@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlin.math.roundToInt
 
 /**
@@ -145,6 +146,8 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
     var dragging by remember { mutableStateOf(false) }
     // While dragging the thumb follows the finger, not the list, so that it does not jitter.
     var dragFraction by remember { mutableFloatStateOf(0f) }
+    // Where the list should go. Letting go keeps it, so that the last jump is not cut short.
+    var target by remember { mutableStateOf<Float?>(null) }
     var shown by remember { mutableStateOf(false) }
     val scrolling by remember(list) { derivedStateOf { list.scrolling } }
     LaunchedEffect(scrolling, dragging, long) {
@@ -158,11 +161,9 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
         }
     }
     LaunchedEffect(list) {
-        snapshotFlow { if (dragging) dragFraction else null }.collectLatest { f ->
-            if (f != null) {
-                val p = list.position
-                list.jumpTo(jumpIndex(f, p.total, p.visible))
-            }
+        snapshotFlow { target }.filterNotNull().collectLatest { f ->
+            val p = list.position
+            list.jumpTo(jumpIndex(f, p.total, p.visible))
         }
     }
     val alpha by animateFloatAsState(if (shown) 1f else 0f, label = "scroller")
@@ -190,6 +191,7 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
                     detectVerticalDragGestures(
                         onDragStart = {
                             dragFraction = thumbFraction(list.position)
+                            target = null
                             dragging = true
                         },
                         onDragEnd = { dragging = false },
@@ -197,6 +199,7 @@ private fun FastScrollBox(list: Scrollable, modifier: Modifier, label: ((Int) ->
                     ) { change, dy ->
                         change.consume()
                         dragFraction = (dragFraction + dy / track).coerceIn(0f, 1f)
+                        target = dragFraction
                         val l = labelOf?.invoke(jumpIndex(dragFraction, list.position.total, list.position.visible))
                         if (l != null && l != lastLabel) {
                             if (lastLabel != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)

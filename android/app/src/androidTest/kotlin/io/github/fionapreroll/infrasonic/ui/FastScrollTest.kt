@@ -70,7 +70,8 @@ class FastScrollTest {
         }
         compose.mainClock.advanceTimeBy(500)
         assertTrue("moved from $before to ${list.firstVisibleItemIndex}", list.firstVisibleItemIndex > before + 100)
-        assertTrue(!list.canScrollForward)
+        // Letting go right after the last move still lands at the end.
+        assertTrue("stopped at ${list.firstVisibleItemIndex} of ${names.size}", !list.canScrollForward)
         compose.mainClock.advanceTimeBy(3000)
         compose.onNodeWithTag("fast-scroll-thumb").assertDoesNotExist()
     }
