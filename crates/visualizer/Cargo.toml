@@ -1,0 +1,36 @@
+[package]
+name = "infrasonic-visualizer"
+description = "Music visualizer for infrasonic: MilkDrop presets rendered by the Lactea engine from the audio the engine plays"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+infrasonic-engine = { workspace = true }
+# The Lactea fork with the limits and budgets infrasonic relies on (docs/security.md there); pinned by commit.
+lactea = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
+lactea-host = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl"] }
+pollster = "1"
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# Vulkan where the device has it, OpenGL ES 3 otherwise.
+[target.'cfg(target_os = "android")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["vulkan", "gles"] }
+
+# Software Vulkan (lavapipe) for the tests on Linux; without an adapter they skip.
+[target.'cfg(all(target_os = "linux", not(target_os = "android")))'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["vulkan"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -69,8 +69,9 @@ player (`crates/tui`), the web player (`crates/web`), the Android app (`android/
 - Actions are pinned to a commit and Docker base images to a digest; Dependabot keeps them
   current.
 - `vendor/opus-decoder` carries two fixes until upstream releases them; then it goes.
-- Dependencies come from crates.io, with `Cargo.lock` committed. Their licences must fit
-  GPL-3.0-only (`deny.toml`). Prefer crates in pure Rust.
+- Dependencies come from crates.io or from FionaPreroll's repositories on GitHub, with
+  `Cargo.lock` committed. Their licences must fit GPL-3.0-only (`deny.toml`). Prefer crates in
+  pure Rust.
 
 ## What we don't need
 

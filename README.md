@@ -169,7 +169,8 @@ the player deploys it to GitHub Pages (https://fionapreroll.github.io/infrasonic
 | `crates/core` | Configuration and profiles, HTTP streaming into the engine, audio cache and pinning, scrobbling, queue sync. |
 | `crates/tui` | The `infrasonic` terminal player (ratatui). |
 | `crates/headless` | `infrasonic-headless`, a player without UI, also for `adb shell` on Android. |
-| `crates/ffi` | Kotlin interface of the core for the Android app (UniFFI): sessions, library, playback, downloads, settings and servers. |
+| `crates/visualizer` | Music visualizer: MilkDrop presets rendered with wgpu by [Lactea](https://github.com/FionaPreroll/lactea) from the audio the engine plays. |
+| `crates/ffi` | Kotlin interface of the core for the Android app (UniFFI): sessions, library, playback, downloads, settings, servers and the visualizer. |
 | `crates/e2e` | End-to-end and soak tests against real servers. |
 | `crates/web` | The web player: page and audio worker (WebAssembly), assets in `www/`, container image in `docker/`. |
 | `vendor/opus-decoder` | opus-decoder 0.1.1 with a speed fix and an overflow fix, until they are released upstream. |
@@ -180,8 +181,17 @@ the player deploys it to GitHub Pages (https://fionapreroll.github.io/infrasonic
 device through `crates/ffi` (UniFFI bindings). It has the library, playlists, search, lyrics,
 podcasts, bookmarks, shares and the server jukebox; downloads for offline use with separate bit
 rates for Wi-Fi, mobile data and downloads; notification, lock screen, Bluetooth resume, Android
-Auto with voice search and a home screen widget; several servers, self-signed certificates,
-Material You themes and English and German texts. Android 8 or newer.
+Auto with voice search and a home screen widget; a MilkDrop visualizer; several servers,
+self-signed certificates, Material You themes and English and German texts. Android 8 or newer.
+
+The visualizer (the button in the player) renders MilkDrop presets with the Lactea engine from
+what the engine plays, so it needs no microphone permission. Presets are code from many authors:
+Lactea's fork bounds what one may do (nesting, loops and memory of expressions, shader loops,
+image sizes; its `docs/security.md`), and `crates/visualizer` sets these bounds for phones. The
+app ships 24 starter presets; the full Cream of the Crop collection (about 9,000 presets, 30 MB)
+is a download from the fork's releases only if the user asks for it (Settings → Visualizer),
+checked against the SHA-256 of the release index and of every file in it. Whether a newer
+collection exists is asked only if the user switches that on.
 
 ```sh
 android/gradlew -p android :app:assembleGithubDebug -Pinfrasonic.abis=arm64-v8a   # needs the SDK, NDK 29, cargo-ndk

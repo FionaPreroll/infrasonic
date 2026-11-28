@@ -16,6 +16,7 @@ authors = ["Fiona"]
 infrasonic-subsonic = { path = "crates/subsonic", version = "0.1.0" }
 infrasonic-engine = { path = "crates/engine", version = "0.1.0", default-features = false }
 infrasonic-core = { path = "crates/core", version = "0.1.0", default-features = false }
+infrasonic-visualizer = { path = "crates/visualizer" }
 
 anyhow = "1"
 thiserror = "2"

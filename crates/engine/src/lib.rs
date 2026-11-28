@@ -22,6 +22,7 @@ mod mp4edit;
 pub mod output;
 mod player;
 pub mod queue;
+pub mod scope;
 pub mod source;
 pub mod tempo;
 

@@ -271,6 +271,23 @@
     <string name="shortcut_resume_long">Weiterhören</string>
     <string name="shortcut_search">Suche</string>
     <string name="no_favorites">Noch keine Lieblingssongs.</string>
+    <string name="visualizer">Visualizer</string>
+    <string name="visualizer_presets">Presets</string>
+    <string name="visualizer_full">Volle Sammlung: %1$s</string>
+    <string name="visualizer_download">Volle Sammlung herunterladen</string>
+    <string name="visualizer_download_hint">Rund 9.000 MilkDrop-Presets der Cream-of-the-Crop-Sammlung, nur auf deinen Wunsch von GitHub geladen.</string>
+    <string name="visualizer_remove">Volle Sammlung entfernen</string>
+    <string name="visualizer_updates">Nach neuen Sammlungen suchen</string>
+    <string name="visualizer_updates_hint">Beim Start bei GitHub nachsehen, ob es eine neuere Preset-Sammlung gibt.</string>
+    <string name="visualizer_bundle_title">Preset-Sammlung</string>
+    <string name="visualizer_bundle_text">Sammlung %1$d: %2$s, %3$s MB. Presets sind Code vieler Autoren; infrasonic führt sie mit Grenzen für Zeit und Speicher aus.</string>
+    <string name="visualizer_bundle_failed">Die Sammlung konnte nicht geladen werden.</string>
+    <string name="visualizer_installing">Wird geprüft und installiert …</string>
+    <string name="visualizer_change">Preset wechseln</string>
+    <string name="visualizer_every">Alle %1$d s</string>
+    <string name="visualizer_by_hand">Von Hand</string>
+    <string name="visualizer_unavailable">Der Visualizer kann nicht laufen: %1$s</string>
+    <string name="visualizer_hint">Wischen für das nächste Preset</string>
     <plurals name="albums_count">
         <item quantity="one">%d Album</item>
         <item quantity="other">%d Alben</item>
@@ -278,5 +295,13 @@
     <plurals name="songs_count">
         <item quantity="one">%d Titel</item>
         <item quantity="other">%d Titel</item>
+    </plurals>
+    <plurals name="visualizer_presets_count">
+        <item quantity="one">%d Preset</item>
+        <item quantity="other">%d Presets</item>
+    </plurals>
+    <plurals name="visualizer_starters">
+        <item quantity="one">%d Start-Preset</item>
+        <item quantity="other">%d Start-Presets</item>
     </plurals>
 </resources>

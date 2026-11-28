@@ -1041,3 +1041,31 @@ pub fn equalizer_max_gain_db() -> f32 {
 pub fn equalizer_headroom_db(settings: EqualizerSettings) -> f32 {
     settings.to_engine().headroom_db()
 }
+
+/// How the visualizer renders.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct VisualizerSettings {
+    /// Frames per second (1–120; the display's rate caps it).
+    pub fps: u32,
+    /// Seconds a preset stays before the next blends in; 0 keeps it until changed.
+    pub preset_seconds: f32,
+    /// Seconds the blend takes; 0 cuts.
+    pub transition_seconds: f32,
+}
+
+impl VisualizerSettings {
+    pub(crate) fn to_visualizer(&self) -> infrasonic_visualizer::Settings {
+        let finite = |v: f32, max: f32| {
+            if v.is_finite() {
+                v.clamp(0.0, max)
+            } else {
+                0.0
+            }
+        };
+        infrasonic_visualizer::Settings {
+            fps: self.fps.clamp(1, 120),
+            preset_seconds: finite(self.preset_seconds, 3600.0),
+            transition_seconds: finite(self.transition_seconds, 30.0),
+        }
+    }
+}

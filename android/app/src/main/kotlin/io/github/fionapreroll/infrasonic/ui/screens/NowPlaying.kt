@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Close
@@ -115,6 +116,9 @@ fun NowPlayingScreen() {
     val nav = LocalNav.current
     val eq by Graph.equalizer.state.collectAsState()
     Screen(stringResource(R.string.now_playing), actions = {
+        IconButton(onClick = { nav.navigate(Routes.VISUALIZER) }) {
+            Icon(Icons.Default.AutoAwesome, stringResource(R.string.visualizer))
+        }
         IconButton(onClick = { nav.navigate(Routes.EQUALIZER) }) {
             Icon(
                 Icons.Default.GraphicEq,

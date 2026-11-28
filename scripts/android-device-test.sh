@@ -22,9 +22,10 @@ if [ "$status" -ne 0 ]; then
   # Show why in the log; the HTML report is only in the artifact.
   find app/build/outputs/androidTest-results -name '*.xml' -exec \
     sed -n '/<failure/,/<\/failure>/p' {} + | head -80 || true
+  # adb waits for a device without end; an emulator that crashed is gone for good.
   echo "--- logcat (app) ---"
-  adb logcat -d -v brief 'infrasonic:*' '*:S' | head -400 || true
+  timeout 60 adb logcat -d -v brief 'infrasonic:*' '*:S' | head -400 || true
   echo "--- logcat (crashes) ---"
-  adb logcat -d -v brief 'AndroidRuntime:E' 'DEBUG:*' 'libc:*' '*:S' | tail -80 || true
+  timeout 60 adb logcat -d -v brief 'AndroidRuntime:E' 'DEBUG:*' 'libc:*' '*:S' | tail -80 || true
 fi
 exit "$status"

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -26,6 +27,7 @@ import androidx.test.services.storage.TestStorage
 import io.github.fionapreroll.infrasonic.core.PlayState
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.ui.MainActivity
+import org.junit.Assert.assertNull
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -135,6 +137,14 @@ class AppTest {
         compose.waitUntilAtLeastOneExists(hasText("Now playing"), 10_000)
         screenshot("4-now-playing")
         compose.onAllNodesWithText("Now playing")[0].assertExists()
+
+        // The visualizer renders the starter presets into its Surface (Rust, wgpu on the emulator's GPU).
+        compose.onNodeWithContentDescription("Visualizer").tap()
+        compose.waitUntil(60_000) { Graph.core.visualizerPreset() != null || Graph.core.visualizerError() != null }
+        assertNull("visualizer error", Graph.core.visualizerError())
+        screenshot("4b-visualizer")
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilAtLeastOneExists(hasText("Now playing"), 10_000)
 
         compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onAllNodesWithText("More")[0].performClick()

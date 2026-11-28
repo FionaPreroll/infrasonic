@@ -290,11 +290,45 @@ S = {
     "shortcut_resume_long": ("Continue playing", "Weiterhören"),
     "shortcut_search": ("Search", "Suche"),
     "no_favorites": ("No favorite songs yet.", "Noch keine Lieblingssongs."),
+    # visualizer
+    "visualizer": ("Visualizer", "Visualizer"),
+    "visualizer_presets": ("Presets", "Presets"),
+    "visualizer_full": ("Full collection: %1$s", "Volle Sammlung: %1$s"),
+    "visualizer_download": ("Download the full collection", "Volle Sammlung herunterladen"),
+    "visualizer_download_hint": (
+        "About 9,000 MilkDrop presets of the Cream of the Crop collection, downloaded from GitHub only if you ask.",
+        "Rund 9.000 MilkDrop-Presets der Cream-of-the-Crop-Sammlung, nur auf deinen Wunsch von GitHub geladen.",
+    ),
+    "visualizer_remove": ("Remove the full collection", "Volle Sammlung entfernen"),
+    "visualizer_updates": ("Look for new collections", "Nach neuen Sammlungen suchen"),
+    "visualizer_updates_hint": (
+        "At the start, ask GitHub whether a newer preset collection exists.",
+        "Beim Start bei GitHub nachsehen, ob es eine neuere Preset-Sammlung gibt.",
+    ),
+    "visualizer_bundle_title": ("Preset collection", "Preset-Sammlung"),
+    "visualizer_bundle_text": (
+        "Collection %1$d: %2$s, %3$s MB. Presets are code from many authors; infrasonic runs them with "
+        "limits on time and memory.",
+        "Sammlung %1$d: %2$s, %3$s MB. Presets sind Code vieler Autoren; infrasonic führt sie mit "
+        "Grenzen für Zeit und Speicher aus.",
+    ),
+    "visualizer_bundle_failed": ("The collection could not be downloaded.", "Die Sammlung konnte nicht geladen werden."),
+    "visualizer_installing": ("Checking and installing…", "Wird geprüft und installiert …"),
+    "visualizer_change": ("Change preset", "Preset wechseln"),
+    "visualizer_every": ("Every %1$d s", "Alle %1$d s"),
+    "visualizer_by_hand": ("By hand", "Von Hand"),
+    "visualizer_unavailable": ("The visualizer cannot run: %1$s", "Der Visualizer kann nicht laufen: %1$s"),
+    "visualizer_hint": ("Swipe for the next preset", "Wischen für das nächste Preset"),
 }
 
 P = {
     "albums_count": ({"one": "%d album", "other": "%d albums"}, {"one": "%d Album", "other": "%d Alben"}),
     "songs_count": ({"one": "%d song", "other": "%d songs"}, {"one": "%d Titel", "other": "%d Titel"}),
+    "visualizer_presets_count": ({"one": "%d preset", "other": "%d presets"}, {"one": "%d Preset", "other": "%d Presets"}),
+    "visualizer_starters": (
+        {"one": "%d starter preset", "other": "%d starter presets"},
+        {"one": "%d Start-Preset", "other": "%d Start-Presets"},
+    ),
 }
 
 
