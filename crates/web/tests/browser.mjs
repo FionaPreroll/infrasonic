@@ -167,6 +167,12 @@ for (const [name, server] of servers) {
     await waitPlaying(page, 1);
   });
 
+  await step("double click on a song row plays it", async () => {
+    await page.dblclick("table.songs tr:nth-child(3) .dur");
+    await page.waitForFunction(() => document.querySelector(".player .title")?.textContent.includes("High A"));
+    await waitPlaying(page, 1);
+  });
+
   await step("every format plays through the engine", async () => {
     await page.evaluate(() => { location.hash = "#/search/Song"; });
     await page.waitForFunction(() => document.querySelectorAll("table.songs tr").length >= 4);
@@ -194,6 +200,11 @@ for (const [name, server] of servers) {
     await page.click("table.songs tr:nth-child(3) button:has(svg[data-icon=Up])");
     await page.waitForFunction(() =>
       document.querySelectorAll("table.songs tr .title > a")[1]?.textContent.includes("High A"));
+    // A double click on a row of the queue plays that song.
+    await page.dblclick("table.songs tr:nth-child(1) .dur");
+    await page.waitForFunction(() => document.querySelector(".player .title")?.textContent.includes("Low A"));
+    await page.dblclick("table.songs tr:nth-child(3) .dur");
+    await page.waitForFunction(() => document.querySelector(".player .title")?.textContent.includes("Middle A"));
   });
 
   await step("star the playing song (l) and see it in favorites", async () => {

@@ -594,7 +594,22 @@ pub struct ListOpts {
     pub on_remove: Option<Callback<usize>>,
 }
 
-/// A table of songs. Clicking a title plays the list from there.
+/// Whether a double click on a song row hit the row itself, not one of its links or buttons,
+/// which have their own action.
+pub fn on_row(ev: &web_sys::MouseEvent) -> bool {
+    ev.target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .is_some_and(|e| matches!(e.closest("a, button"), Ok(None)))
+}
+
+/// Keeps a double click on a row from selecting text.
+pub fn no_select(ev: web_sys::MouseEvent) {
+    if ev.detail() > 1 {
+        ev.prevent_default();
+    }
+}
+
+/// A table of songs. Clicking a title or double clicking the row plays the list from there.
 pub fn song_list(songs: Vec<Child>, opts: ListOpts) -> impl IntoView {
     let app = app();
     let songs = StoredValue::new(songs);
@@ -640,6 +655,12 @@ pub fn song_list(songs: Vec<Child>, opts: ListOpts) -> impl IntoView {
                             }
                         }
                         on:dragleave=move |_| over.set(None)
+                        on:mousedown=no_select
+                        on:dblclick=move |ev| {
+                            if on_row(&ev) {
+                                songs.with_value(|l| app.player.play_songs(l, i));
+                            }
+                        }
                         on:drop=move |ev| {
                             ev.prevent_default();
                             over.set(None);

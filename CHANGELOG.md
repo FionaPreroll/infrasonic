@@ -51,6 +51,7 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
   AudioWorklet.
 - Web player: the mouse wheel over the volume slider changes the volume, and the speaker icon
   mutes; one set of icons that looks the same in every browser.
+- Web player: a double click on a song in a list or in the queue plays it right away.
 - Android: the app, with the library (album lists, artists, genres, folders, search, favorites,
   ratings, playlists, lyrics, podcasts, bookmarks, shares, the server jukebox and library scan),
   playback through the Rust engine with notification, lock screen, Bluetooth resume, Android

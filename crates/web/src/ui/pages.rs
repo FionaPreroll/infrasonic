@@ -10,8 +10,8 @@ use wasm_bindgen::JsCast;
 
 use super::icons::{Icon, icon};
 use super::widgets::{
-    ListOpts, album_grid, artist_card, cover, fmt_time, fmt_total, load, loading, share,
-    song_actions, song_list, songs_n, star_button, stars,
+    ListOpts, album_grid, artist_card, cover, fmt_time, fmt_total, load, loading, no_select,
+    on_row, share, song_actions, song_list, songs_n, star_button, stars,
 };
 use super::{App, Route, app, apply_theme, playback_settings, replay_gain};
 use crate::i18n::{t, tf};
@@ -777,6 +777,12 @@ fn queue() -> impl IntoView {
                             over.set(Some(i));
                         }
                         on:dragleave=move |_| over.set(None)
+                        on:mousedown=no_select
+                        on:dblclick=move |ev| {
+                            if on_row(&ev) {
+                                p.send(Command::PlayIndex(i));
+                            }
+                        }
                         on:drop=move |ev| {
                             ev.prevent_default();
                             over.set(None);
