@@ -232,6 +232,27 @@ The test music in `testdata/music` is generated (see `testdata/README.md`). CI r
 clippy, tests on Linux, macOS and Windows, the end-to-end tests, the web player in Chromium, Firefox, WebKit and mobile Chromium, the Android
 app (build, lint, Kotlin tests, emulator UI test) and `cargo deny`; fuzzing and a 30 minute soak run nightly.
 
+### Branches and pull requests
+
+During the initial development, changes go straight to `main`. After that, every feature or fix
+gets its own branch off `origin/main`, named `feature/<name_in_snake_case>` or
+`fix/<name_in_snake_case>`, and one pull request against `main`, which is merged once CI is
+green. Nobody pushes to `main` then.
+
+### Changelog and versions
+
+[`CHANGELOG.md`](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Every change that users notice adds a line under `## [Unreleased]`, in `Added`, `Changed`,
+`Fixed` or `Removed`, starting with the part it is about.
+
+The terminal player, the web player and the Android app are released on their own, and only
+when a release is asked for. A release moves the lines of its part from `Unreleased` under a
+heading with its tag and date, e.g. `## android-v0.1.0 - 2026-12-01`, raises the version
+(`version` in the workspace `Cargo.toml` for the terminal and web player, `appVersion` in
+`android/app/build.gradle.kts` for the app) in the same commit, and pushes the tag: `vX.Y.Z`
+for the terminal player, `web-vX.Y.Z` for the web player, `android-vX.Y.Z` for the app. The
+rolling build `android-latest` is no release and gets no heading.
+
 ## License
 
 GPL-3.0-only, see [LICENSE](LICENSE). Dependencies are checked for compatible licences with
