@@ -5,8 +5,8 @@
 //! backend pulls from it in its real-time callback via [`render`], which also applies volume,
 //! pause and flush requests and counts played frames for position tracking.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -16,6 +16,7 @@ use rtrb::{Consumer, RingBuffer};
 
 use crate::Error;
 use crate::eq::{EqProcessor, Equalizer};
+use crate::scope::Scope;
 use crate::tempo::{Tempo, clamp_speed};
 
 /// Format of the output stream.
@@ -58,6 +59,8 @@ pub struct OutputShared {
     /// Everything up to the end of the queue is in the ring buffer: the time stretcher may
     /// hand out what it holds back.
     input_ended: AtomicBool,
+    /// Gets a copy of what the callback plays (`scope::ScopedOutputFactory`).
+    scope: OnceLock<Arc<Scope>>,
 }
 
 /// Length of a fade in or out, in frames (about 5 ms).
@@ -85,6 +88,7 @@ impl Default for OutputShared {
             speed_channels: AtomicU32::new(0),
             tempo: Mutex::new(None),
             input_ended: AtomicBool::new(false),
+            scope: OnceLock::new(),
         }
     }
 }
@@ -130,6 +134,11 @@ impl OutputShared {
     pub fn set_expect_audio(&self, v: bool) {
         self.expect_audio.store(v, Ordering::Release);
     }
+    /// Copy what this stream plays to `scope` from now on (once per stream).
+    pub fn set_scope(&self, scope: Arc<Scope>) {
+        let _ = self.scope.set(scope);
+    }
+
     /// Use `eq` (or none) for an output with this spec; the callback fades over to it.
     pub fn set_equalizer(&self, eq: Option<&Equalizer>, spec: OutputSpec) {
         *self.eq_next.lock() = Some((eq.copied(), spec));
@@ -301,6 +310,9 @@ fn take(
     };
     if n == 0 {
         return (0, heard);
+    }
+    if let Some(scope) = shared.scope.get() {
+        scope.feed(&out[..n * channels]);
     }
     let gain = shared.gain();
     if gain != 1.0 {
