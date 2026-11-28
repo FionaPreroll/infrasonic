@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -191,6 +192,9 @@ fun AppRoot() {
         val route = entry?.destination?.route ?: ""
         val fullScreen = route == Routes.NOW || route == Routes.VISUALIZER || route.startsWith("server/")
         Scaffold(
+            // The visualizer hides the system bars and fills the whole screen, the area beside a display cutout
+            // (notch, camera hole) too; its own texts and buttons keep clear of the cutout.
+            contentWindowInsets = if (route == Routes.VISUALIZER) WindowInsets(0) else ScaffoldDefaults.contentWindowInsets,
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
                 if (!fullScreen) {

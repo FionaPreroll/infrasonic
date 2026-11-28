@@ -117,3 +117,5 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
 - Android: the version code of the GitHub build counts every commit again, so the update check
   offers new builds.
 - Android: covers of different servers with the same id no longer mix up.
+- Android: the visualizer fills the whole screen on phones with a notch or camera hole instead of
+  leaving a black bar at the top; its texts and buttons stay clear of the notch.
