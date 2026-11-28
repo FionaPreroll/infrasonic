@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.fionapreroll.infrasonic.data
 
+import android.app.ActivityManager
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
 import androidx.core.content.edit
 import io.github.fionapreroll.infrasonic.BuildConfig
@@ -36,6 +38,8 @@ object Graph {
         private set
     lateinit var covers: Covers
         private set
+    lateinit var pages: PageCache
+        private set
     lateinit var network: NetworkQuality
         private set
     lateinit var equalizer: EqualizerManager
@@ -61,7 +65,9 @@ object Graph {
         prefs = UiPrefs(app)
         player = PlayerController(core)
         core.setListener(player)
-        covers = Covers(app, core)
+        val lowRam = app.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
+        covers = Covers(app, core, server = { servers.activeId.value }, limitMb = { prefs.coverCacheMb.value }, lowRam = lowRam)
+        pages = PageCache(lowRam)
         servers = Servers(core, prefs, player)
         network = NetworkQuality(app, core, prefs, servers)
         val eqPrefs = app.getSharedPreferences("equalizer", Context.MODE_PRIVATE)
@@ -97,5 +103,21 @@ object Graph {
         player.onPaused = { sleep.onPaused() }
         ready = true
         scope.launch { servers.connectActive() }
+    }
+
+    /** Free memory when the system asks for it (see [android.content.ComponentCallbacks2]). */
+    fun trimMemory(level: Int) {
+        if (!ready) return
+        @Suppress("DEPRECATION")
+        when {
+            level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE || level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                covers.clearMemory()
+                pages.clear()
+            }
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                covers.trimMemory()
+                pages.trim()
+            }
+        }
     }
 }

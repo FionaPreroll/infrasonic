@@ -72,6 +72,9 @@ class UiPrefs(context: Context) {
         { sp.getStringSet("auto_pinned", emptySet())?.toSet().orEmpty() },
     ) { v -> sp.edit { putStringSet("auto_pinned", v) } }
 
+    /** Limit of the cover cache on disk in MiB. */
+    val coverCacheMb = intPref("cover_cache_mb", 250)
+
     /** GitHub build: look for a newer build at every start; asked once at the first start. */
     val checkUpdates = boolPref("check_updates", false)
     val askedUpdates = boolPref("asked_updates", false)

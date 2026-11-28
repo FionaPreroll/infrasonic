@@ -11,4 +11,16 @@ class App : Application() {
         AndroidAudio.init(this)
         Graph.init(this)
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        Graph.trimMemory(level)
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onLowMemory() {
+        super.onLowMemory()
+        Graph.trimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
 }

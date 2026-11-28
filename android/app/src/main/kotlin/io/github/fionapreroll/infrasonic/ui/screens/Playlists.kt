@@ -77,7 +77,7 @@ fun PlaylistsScreen() {
     }) {
         val list = rememberLazyListState()
         ScrollToTopOnReselect(Routes.PLAYLISTS) { list.animateScrollToItem(0) }
-        Loader(tick, load = { Graph.core.playlists() }) { lists, _ ->
+        Loader(tick, cache = "playlists", load = { Graph.core.playlists() }) { lists, _ ->
             if (lists.isEmpty()) Empty(stringResource(R.string.no_playlists))
             LazyColumn(state = list) {
                 items(lists, key = { it.id }) { p ->
@@ -113,7 +113,7 @@ fun PlaylistScreen(id: String) {
     var tick by remember { mutableIntStateOf(0) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    Loader(id, tick, load = { Graph.core.playlist(id) }) { p, _ ->
+    Loader(id, tick, cache = "playlist/$id", load = { Graph.core.playlist(id) }) { p, _ ->
         Screen(p.name, actions = {
             IconButton(onClick = { Downloads.enqueue(context, listOf("playlist:${p.id}")) }) { Icon(Icons.Default.Download, stringResource(R.string.download)) }
             IconButton(onClick = { share(context, scope, listOf(p.id), p.name) }) { Icon(Icons.Default.Share, stringResource(R.string.share)) }

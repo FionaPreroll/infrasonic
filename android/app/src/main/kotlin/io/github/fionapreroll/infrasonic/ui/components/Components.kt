@@ -62,6 +62,7 @@ import io.github.fionapreroll.infrasonic.core.FfiException
 import io.github.fionapreroll.infrasonic.core.ItemKind
 import io.github.fionapreroll.infrasonic.core.Playlist
 import io.github.fionapreroll.infrasonic.core.Song
+import io.github.fionapreroll.infrasonic.data.Connection
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.downloads.Downloads
 import io.github.fionapreroll.infrasonic.playback.reason
@@ -103,22 +104,58 @@ fun Cover(id: String?, modifier: Modifier = Modifier, size: Int = 300, corner: D
     }
 }
 
-/** Loads data with a spinner and an error message with "retry". */
+/**
+ * Loads [load] once the session is usable. With [cache] (a name for the page, unique per screen
+ * and item), a page shown before appears at once from [io.github.fionapreroll.infrasonic.data.PageCache]
+ * and is loaded again in the background when it is older than a few minutes, when [keys] change
+ * or after reload. While reloading, and when reloading fails, what is shown stays.
+ */
 @Composable
-fun <T> Loader(vararg keys: Any?, load: suspend () -> T, content: @Composable (T, reload: () -> Unit) -> Unit) {
+fun <T> rememberPage(vararg keys: Any?, cache: String?, load: suspend () -> T): Pair<Result<T>?, () -> Unit> {
     var attempt by remember { mutableIntStateOf(0) }
     val server by Graph.servers.activeId.collectAsState()
-    val result by produceState<Result<T>?>(null, *keys, attempt, server) {
-        value = null
+    val offline = Graph.servers.connection.collectAsState().value is Connection.Offline
+    val cacheKey = cache?.let { Graph.pages.key(server, offline, it) }
+    // Runs of the producer below: whether it is the first, and the attempt of the last one.
+    val runs = remember { intArrayOf(0, 0) }
+
+    fun cached(key: String?) = key?.let { Graph.pages.get(it) }
+
+    @Suppress("UNCHECKED_CAST")
+    val initial = remember { cached(cacheKey)?.let { Result.success(it.value as T) } }
+    val result by produceState(initial, *keys, attempt, server, offline) {
+        val first = runs[0]++ == 0
+        val reloading = runs[1] != attempt
+        runs[1] = attempt
+        val entry = cached(cacheKey)
+        val shown = value
+        @Suppress("UNCHECKED_CAST")
+        value = when {
+            entry != null -> Result.success(entry.value as T)
+            reloading && shown?.isSuccess == true -> shown
+            else -> null
+        }
+        if (first && entry != null && entry.fresh) return@produceState
+        // A reload, or new keys (a tick), follows a change (star, playlist edit, ...): other
+        // pages may show it too.
+        if (!first) Graph.pages.stale()
         // Right after the start or a server change the session is still connecting.
         Graph.servers.awaitUsable()
-        value = runCatching { load() }
+        val r = runCatching { load() }
+        if (r.isSuccess && cacheKey != null) Graph.pages.put(cacheKey, r.getOrNull())
+        if (r.isSuccess || value?.isSuccess != true) value = r
     }
-    val r = result
+    return result to { attempt++ }
+}
+
+/** Loads data with a spinner and an error message with "retry"; see [rememberPage]. */
+@Composable
+fun <T> Loader(vararg keys: Any?, cache: String? = null, load: suspend () -> T, content: @Composable (T, reload: () -> Unit) -> Unit) {
+    val (r, reload) = rememberPage(*keys, cache = cache, load = load)
     when {
         r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        r.isFailure -> ErrorBox(errorText(r.exceptionOrNull()!!)) { attempt++ }
-        else -> content(r.getOrThrow()) { attempt++ }
+        r.isFailure -> ErrorBox(errorText(r.exceptionOrNull()!!), reload)
+        else -> content(r.getOrThrow(), reload)
     }
 }
 
@@ -217,7 +254,7 @@ fun SongMenu(song: Song, pinned: Boolean, extra: (@Composable (close: () -> Unit
             text = { Text(stringResource(if (song.starred) R.string.unstar else R.string.star)) },
             onClick = {
                 close()
-                scope.launch { runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, !song.starred) }
+                scope.launch { runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, !song.starred).also { Graph.pages.stale() } }
                         .onSuccess { FavoriteDownloads.syncSoon(context.applicationContext) }
                         .onFailure { context.toast(it) } }
             },
@@ -247,7 +284,7 @@ fun SongMenu(song: Song, pinned: Boolean, extra: (@Composable (close: () -> Unit
 /** Create a share link on the server and hand it to the system share sheet. */
 fun share(context: android.content.Context, scope: kotlinx.coroutines.CoroutineScope, ids: List<String>, title: String) {
     scope.launch {
-        runCatching { Graph.core.createShare(ids, title, null) }
+        runCatching { Graph.core.createShare(ids, title, null).also { Graph.pages.stale() } }
             .onSuccess { s ->
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND)
                     .setType("text/plain")
@@ -275,7 +312,7 @@ fun AddToPlaylistDialog(songIds: List<String>, onDone: () -> Unit) {
                         p.name,
                         Modifier.fillMaxWidth().clickable {
                             scope.launch {
-                                runCatching { Graph.core.addToPlaylist(p.id, songIds) }
+                                runCatching { Graph.core.addToPlaylist(p.id, songIds).also { Graph.pages.stale() } }
                                     .onSuccess { context.toast(R.string.added_to, p.name) }
                                     .onFailure { context.toast(it) }
                                 onDone()
@@ -289,7 +326,7 @@ fun AddToPlaylistDialog(songIds: List<String>, onDone: () -> Unit) {
         confirmButton = {
             TextButton(enabled = newName.isNotBlank(), onClick = {
                 scope.launch {
-                    runCatching { Graph.core.createPlaylist(newName.trim(), songIds) }.onFailure { context.toast(it) }
+                    runCatching { Graph.core.createPlaylist(newName.trim(), songIds).also { Graph.pages.stale() } }.onFailure { context.toast(it) }
                     onDone()
                 }
             }) { Text(stringResource(R.string.create)) }

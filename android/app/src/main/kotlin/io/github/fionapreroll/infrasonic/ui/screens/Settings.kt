@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,8 @@ import io.github.fionapreroll.infrasonic.core.coreVersion
 import io.github.fionapreroll.infrasonic.data.Graph
 import io.github.fionapreroll.infrasonic.data.ThemeMode
 import io.github.fionapreroll.infrasonic.downloads.FavoriteDownloads
+import io.github.fionapreroll.infrasonic.ui.LocalNav
+import io.github.fionapreroll.infrasonic.ui.Routes
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
 import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
@@ -55,6 +58,7 @@ import kotlinx.coroutines.launch
 private val bitRates = listOf(0, 320, 256, 192, 160, 128, 96, 64)
 private val formats = listOf("opus", "mp3", "aac", "")
 private val cacheSizes = listOf(512, 1024, 2048, 4096, 8192, 16384)
+private val coverCacheSizes = listOf(50, 100, 250, 500, 1024)
 
 @Composable
 fun SettingsScreen() {
@@ -75,7 +79,9 @@ fun SettingsScreen() {
     val format by prefs.format.flow.collectAsState()
     val wifiOnly by prefs.downloadOnWifiOnly.flow.collectAsState()
     val offline by prefs.offlineMode.flow.collectAsState()
-    var clearing by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf<Clear?>(null) }
+    val scope = rememberCoroutineScope()
+    val nav = LocalNav.current
     var cacheTick by remember { mutableIntStateOf(0) }
 
     @Composable
@@ -192,17 +198,53 @@ fun SettingsScreen() {
                 { if (it == 0) stringResource(R.string.off) else it.toString() },
                 stringResource(R.string.preload_hint),
             ) { n -> update { it.copy(preloadSongs = n.toUInt()) } }
+
+            HorizontalDivider()
+            SectionTitle(stringResource(R.string.storage))
+            val usage = remember(cacheTick) { Graph.core.cacheUsage() }
+            fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes)
             Choice(
-                stringResource(R.string.cache_size),
+                stringResource(R.string.song_cache),
                 cacheSizes,
                 core.cacheMb.toInt(),
-                { Formatter.formatShortFileSize(context, it * 1024L * 1024L) },
-            ) { mb -> update { it.copy(cacheMb = mb.toULong()) } }
-            val usage = remember(cacheTick) { Graph.core.cacheUsage() }
+                { size(it * 1024L * 1024L) },
+                stringResource(R.string.song_cache_hint, size(usage.cachedBytes.toLong())),
+            ) { mb ->
+                update { it.copy(cacheMb = mb.toULong()) }
+                cacheTick++
+            }
+            val coverMb by prefs.coverCacheMb.flow.collectAsState()
+            val coverBytes = remember(cacheTick, coverMb) { Graph.covers.diskBytes() }
+            Choice(
+                stringResource(R.string.cover_cache),
+                coverCacheSizes,
+                coverMb,
+                { size(it * 1024L * 1024L) },
+                stringResource(R.string.cover_cache_hint, size(coverBytes)),
+            ) { mb ->
+                prefs.coverCacheMb.value = mb
+                scope.launch {
+                    Graph.covers.evict()
+                    cacheTick++
+                }
+            }
             ListItem(
-                modifier = Modifier.clickable { clearing = true },
-                headlineContent = { Text(stringResource(R.string.clear_cache)) },
-                supportingContent = { Text(Formatter.formatShortFileSize(context, usage.cachedBytes.toLong())) },
+                modifier = Modifier.clickable { nav.navigate(Routes.DOWNLOADS) },
+                headlineContent = { Text(stringResource(R.string.downloads)) },
+                supportingContent = { Text(stringResource(R.string.downloads_usage, size(usage.pinnedBytes.toLong()), usage.pinnedFiles.toInt())) },
+            )
+            val memory = remember(cacheTick) { Graph.covers.memoryBytes() to Graph.pages.size }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.memory_usage)) },
+                supportingContent = { Text(stringResource(R.string.memory_usage_value, size(memory.first), memory.second)) },
+            )
+            ListItem(
+                modifier = Modifier.clickable { clearing = Clear.Songs },
+                headlineContent = { Text(stringResource(R.string.clear_song_cache)) },
+            )
+            ListItem(
+                modifier = Modifier.clickable { clearing = Clear.Covers },
+                headlineContent = { Text(stringResource(R.string.clear_covers)) },
             )
 
             if (AppUpdates.enabled) {
@@ -234,14 +276,21 @@ fun SettingsScreen() {
             )
         }
     }
-    if (clearing) {
-        ConfirmDialog(stringResource(R.string.clear_cache_confirm), { clearing = false }) {
+    when (clearing) {
+        Clear.Songs -> ConfirmDialog(stringResource(R.string.clear_song_cache_confirm), { clearing = null }) {
             runCatching { Graph.core.clearCache() }
-            Graph.covers.clear()
             cacheTick++
         }
+        Clear.Covers -> ConfirmDialog(stringResource(R.string.clear_covers_confirm), { clearing = null }) {
+            Graph.covers.clear()
+            Graph.pages.clear()
+            cacheTick++
+        }
+        null -> {}
     }
 }
+
+private enum class Clear { Songs, Covers }
 
 @Composable
 private fun Toggle(title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit) {

@@ -177,7 +177,7 @@ private fun Controls(song: Song) {
             IconButton(onClick = {
                 val pos = Graph.player.positionNow()
                 scope.launch {
-                    runCatching { Graph.core.createBookmark(song.id, (pos * 1000).toULong(), null) }
+                    runCatching { Graph.core.createBookmark(song.id, (pos * 1000).toULong(), null).also { Graph.pages.stale() } }
                         .onSuccess { context.toast(R.string.bookmark_saved, formatTime(pos)) }
                         .onFailure { context.toast(it) }
                 }
@@ -185,7 +185,7 @@ private fun Controls(song: Song) {
             IconButton(onClick = {
                 val new = !starred
                 scope.launch {
-                    runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, new) }
+                    runCatching { Graph.core.setStarred(ItemKind.SONG, song.id, new).also { Graph.pages.stale() } }
                         .onSuccess {
                             starred = new
                             FavoriteDownloads.syncSoon(context.applicationContext)
@@ -419,7 +419,7 @@ private fun QueuePane() {
         TextInputDialog(stringResource(R.string.save_as_playlist), label = stringResource(R.string.name), onDismiss = { saving = false }) { name ->
             saving = false
             scope.launch {
-                runCatching { Graph.core.saveQueueAsPlaylist(name, null) }
+                runCatching { Graph.core.saveQueueAsPlaylist(name, null).also { Graph.pages.stale() } }
                     .onSuccess { context.toast(R.string.playlist_saved, name) }
                     .onFailure { context.toast(it) }
             }

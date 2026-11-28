@@ -70,6 +70,7 @@ import io.github.fionapreroll.infrasonic.ui.components.Cover
 import io.github.fionapreroll.infrasonic.ui.components.Empty
 import io.github.fionapreroll.infrasonic.ui.components.ErrorBox
 import io.github.fionapreroll.infrasonic.ui.components.Loader
+import io.github.fionapreroll.infrasonic.ui.components.rememberPage
 import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
 import io.github.fionapreroll.infrasonic.ui.components.SongRow
 import io.github.fionapreroll.infrasonic.ui.components.Tile
@@ -86,7 +87,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
-import androidx.compose.runtime.produceState
 import androidx.compose.material3.TextButton
 
 private enum class ListTab(val label: Int, val kind: AlbumListKind) {
@@ -136,18 +136,14 @@ fun HomeScreen() {
 /** The start page: a row of albums for each list, with a link to the whole list. */
 @Composable
 private fun Overview(open: (ListTab) -> Unit) {
-    val server by Graph.servers.activeId.collectAsState()
     val nav = LocalNav.current
     val list = rememberLazyListState()
     ScrollToTopOnReselect(Routes.HOME) { list.animateScrollToItem(0) }
     val rows = listOf(ListTab.Recent, ListTab.Frequent, ListTab.Newest, ListTab.Random)
     LazyColumn(state = list) {
         items(rows, key = { it.name }) { t ->
-            val albums by produceState<List<Album>?>(null, server, t) {
-                Graph.servers.awaitUsable()
-                value = runCatching { Graph.core.albumList(t.kind, 20u, 0u) }.getOrDefault(emptyList())
-            }
-            val a = albums
+            val (albums, _) = rememberPage(t, cache = "row/${t.name}") { Graph.core.albumList(t.kind, 20u, 0u) }
+            val a = albums?.getOrDefault(emptyList())
             if (a != null && a.isEmpty()) return@items
             Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { SectionTitle(stringResource(t.label)) }
@@ -162,12 +158,19 @@ private fun Overview(open: (ListTab) -> Unit) {
     }
 }
 
+/** What [AlbumGrid] keeps in [io.github.fionapreroll.infrasonic.data.PageCache]. */
+private class GridPages(val albums: List<Album>, val end: Boolean)
+
 @Composable
 private fun AlbumGrid(kind: AlbumListKind, tab: Any) {
     val server by Graph.servers.activeId.collectAsState()
+    val offline = Graph.servers.connection.collectAsState().value is Connection.Offline
     val key = tab to server
-    val albums = remember(key) { mutableStateListOf<Album>() }
-    var end by remember(key) { mutableStateOf(false) }
+    // The pages loaded so far stay in memory, so that coming back shows them at once.
+    val cacheKey = Graph.pages.key(server, offline, "grid/$tab")
+    val cached = remember(key) { Graph.pages.get(cacheKey) }
+    val albums = remember(key) { mutableStateListOf<Album>().apply { (cached?.value as? GridPages)?.let { addAll(it.albums) } } }
+    var end by remember(key) { mutableStateOf((cached?.value as? GridPages)?.end ?: false) }
     var error by remember(key) { mutableStateOf<Throwable?>(null) }
     var loading by remember(key) { mutableStateOf(false) }
     val state = rememberLazyGridState()
@@ -182,11 +185,28 @@ private fun AlbumGrid(kind: AlbumListKind, tab: Any) {
             .onSuccess { page ->
                 albums += page
                 if (page.size < PAGE || kind == AlbumListKind.Random) end = true
+                Graph.pages.put(cacheKey, GridPages(albums.toList(), end))
             }
             .onFailure { error = it }
         loading = false
     }
-    LaunchedEffect(key) { more() }
+    LaunchedEffect(key) {
+        if (cached?.fresh == true) return@LaunchedEffect
+        // Stale: start again from the first page, keeping what is shown until it is there.
+        if (cached != null) {
+            loading = true
+            Graph.servers.awaitUsable()
+            runCatching { Graph.core.albumList(kind, PAGE.toUInt(), 0u) }.onSuccess { page ->
+                albums.clear()
+                albums += page
+                end = page.size < PAGE || kind == AlbumListKind.Random
+                Graph.pages.put(cacheKey, GridPages(albums.toList(), end))
+            }
+            loading = false
+        } else {
+            more()
+        }
+    }
     LaunchedEffect(key, state) {
         snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
             .distinctUntilChanged()
@@ -216,7 +236,7 @@ fun ArtistsScreen() {
     }) {
         val list = rememberLazyListState()
         ScrollToTopOnReselect(Routes.ARTISTS) { list.animateScrollToItem(0) }
-        Loader(load = { Graph.core.artists() }) { groups, _ ->
+        Loader(cache = "artists", load = { Graph.core.artists() }) { groups, _ ->
             LazyColumn(state = list) {
                 groups.forEach { g ->
                     item(key = "h" + g.name) { SectionTitle(g.name) }
@@ -242,7 +262,7 @@ fun ArtistScreen(id: String) {
     val nav = LocalNav.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    Loader(id, load = { Graph.core.artist(id) }) { artist, _ ->
+    Loader(id, cache = "artist/$id", load = { Graph.core.artist(id) }) { artist, _ ->
         Screen(artist.name, actions = {
             IconButton(onClick = { Downloads.enqueue(context, listOf("artist:${artist.id}")) }) {
                 Icon(Icons.Default.Download, stringResource(R.string.download))
@@ -303,12 +323,12 @@ fun AlbumScreen(id: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val nav = LocalNav.current
-    Loader(id, load = { Graph.core.album(id) }) { album, reload ->
+    Loader(id, cache = "album/$id", load = { Graph.core.album(id) }) { album, reload ->
         var starred by remember(album) { mutableStateOf(album.starred) }
         Screen(album.name, actions = {
             IconButton(onClick = {
                 scope.launch {
-                    runCatching { Graph.core.setStarred(ItemKind.ALBUM, album.id, !starred) }
+                    runCatching { Graph.core.setStarred(ItemKind.ALBUM, album.id, !starred).also { Graph.pages.stale() } }
                         .onSuccess { starred = !starred }.onFailure { context.toast(it) }
                 }
             }) { Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, stringResource(R.string.star)) }
@@ -366,7 +386,7 @@ fun PlayButtons(songs: List<Song>) {
 fun GenresScreen() {
     val nav = LocalNav.current
     Screen(stringResource(R.string.genres)) {
-        Loader(load = { Graph.core.genres() }) { genres, _ ->
+        Loader(cache = "genres", load = { Graph.core.genres() }) { genres, _ ->
             if (genres.isEmpty()) Empty(stringResource(R.string.nothing_here))
             LazyColumn {
                 items(genres, key = { it.name }) { g ->
@@ -393,7 +413,7 @@ fun GenreScreen(name: String) {
             }
         }) { Icon(Icons.Default.Shuffle, stringResource(R.string.shuffle)) }
     }) {
-        Loader(name, load = { Graph.core.albumList(AlbumListKind.ByGenre(name), 200u, 0u) }) { albums, _ ->
+        Loader(name, cache = "genre/$name", load = { Graph.core.albumList(AlbumListKind.ByGenre(name), 200u, 0u) }) { albums, _ ->
             LazyVerticalGrid(GridCells.Adaptive(150.dp), modifier = Modifier.padding(horizontal = 8.dp)) {
                 items(albums, key = { it.id }) { a -> Tile(a.name, a.artist, a.coverArt) { nav.navigate(Routes.album(a.id)) } }
             }
@@ -407,7 +427,7 @@ fun FolderScreen(id: String?) {
     val nav = LocalNav.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    Loader(id, load = { Graph.core.folder(id) }) { folder, _ ->
+    Loader(id, cache = "folder/$id", load = { Graph.core.folder(id) }) { folder, _ ->
         Screen(folder.name.ifEmpty { stringResource(R.string.folders) }, actions = {
             if (id != null) {
                 IconButton(onClick = {

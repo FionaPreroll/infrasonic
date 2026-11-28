@@ -153,7 +153,7 @@ fun PodcastsScreen() {
         }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh)) }
         IconButton(onClick = { adding = true }) { Icon(Icons.Default.Add, stringResource(R.string.add_podcast)) }
     }) {
-        Loader(tick, load = { Graph.core.podcasts(false) to runCatching { Graph.core.newestEpisodes(10u) }.getOrDefault(emptyList()) }) { (channels, newest), _ ->
+        Loader(tick, cache = "podcasts", load = { Graph.core.podcasts(false) to runCatching { Graph.core.newestEpisodes(10u) }.getOrDefault(emptyList()) }) { (channels, newest), _ ->
             if (channels.isEmpty()) {
                 Empty(stringResource(R.string.no_podcasts))
                 return@Loader
@@ -192,7 +192,7 @@ fun PodcastScreen(id: String) {
     val scope = rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
     var deleting by remember { mutableStateOf(false) }
-    Loader(id, tick, load = { Graph.core.podcast(id) }) { c, _ ->
+    Loader(id, tick, cache = "podcast/$id", load = { Graph.core.podcast(id) }) { c, _ ->
         Screen(c.title, actions = {
             IconButton(onClick = { deleting = true }) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
         }) {
@@ -264,7 +264,7 @@ fun BookmarksScreen() {
     val scope = rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
     Screen(stringResource(R.string.bookmarks)) {
-        Loader(tick, load = { Graph.core.bookmarks() }) { list, _ ->
+        Loader(tick, cache = "bookmarks", load = { Graph.core.bookmarks() }) { list, _ ->
             if (list.isEmpty()) {
                 Empty(stringResource(R.string.no_bookmarks))
                 return@Loader
@@ -303,7 +303,7 @@ fun SharesScreen() {
     val scope = rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
     Screen(stringResource(R.string.shares)) {
-        Loader(tick, load = { Graph.core.shares() }) { list, _ ->
+        Loader(tick, cache = "shares", load = { Graph.core.shares() }) { list, _ ->
             if (list.isEmpty()) {
                 Empty(stringResource(R.string.no_shares))
                 return@Loader
