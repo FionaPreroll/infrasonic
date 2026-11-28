@@ -45,3 +45,6 @@ deny = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# The visualizer's engine: the Lactea fork with the limits and budgets infrasonic relies on, pinned by commit in
+# crates/visualizer/Cargo.toml.
+allow-git = ["https://github.com/FionaPreroll/lactea"]

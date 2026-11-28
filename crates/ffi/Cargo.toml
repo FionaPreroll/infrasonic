@@ -25,6 +25,7 @@ required-features = ["bindgen"]
 infrasonic-core = { workspace = true }
 infrasonic-engine = { workspace = true, features = ["cpal-output"] }
 infrasonic-subsonic.workspace = true
+infrasonic-visualizer.workspace = true
 uniffi = "0.33"
 tokio.workspace = true
 thiserror.workspace = true
@@ -39,6 +40,9 @@ tracing-android = "0.2"
 # The Java VM and app context for cpal's AAudio output (it asks the AudioManager).
 jni-sys = "0.4"
 ndk-context = "0.1"
+# ANativeWindow of the visualizer's Surface (crates/ffi/src/android.rs).
+ndk = { version = "0.9", default-features = false, features = ["rwh_06"] }
+raw-window-handle = "0.6"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
 
 [dev-dependencies]

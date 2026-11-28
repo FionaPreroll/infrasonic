@@ -9,7 +9,9 @@ use infrasonic_core::cache::AudioCache;
 use infrasonic_core::{Session, SessionEvent};
 use infrasonic_engine::Command;
 use infrasonic_engine::output::{CpalOutputFactory, NullOutputFactory, OutputFactory, OutputSpec};
+use infrasonic_engine::scope::{Scope, ScopedOutputFactory};
 use infrasonic_subsonic::{self as ss, Client, SearchOptions, StarTarget};
+use infrasonic_visualizer::Visualizer;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 
@@ -94,15 +96,23 @@ enum Output {
 }
 
 impl Output {
-    fn factory(self) -> Box<dyn OutputFactory> {
+    /// The output's factory; its streams also feed `scope`, which the visualizer reads.
+    fn factory(self, scope: &Arc<Scope>) -> Box<dyn OutputFactory> {
+        let scope = Arc::clone(scope);
         match self {
-            Output::Device => Box::new(CpalOutputFactory::default()),
-            Output::Null(speed) => Box::new(NullOutputFactory::new(
-                OutputSpec {
-                    sample_rate: 48_000,
-                    channels: 2,
-                },
-                speed,
+            Output::Device => Box::new(ScopedOutputFactory::new(
+                CpalOutputFactory::default(),
+                scope,
+            )),
+            Output::Null(speed) => Box::new(ScopedOutputFactory::new(
+                NullOutputFactory::new(
+                    OutputSpec {
+                        sample_rate: 48_000,
+                        channels: 2,
+                    },
+                    speed,
+                ),
+                scope,
             )),
         }
     }
@@ -131,6 +141,9 @@ pub struct Infrasonic {
     speed: Mutex<f32>,
     /// Resume points of the current server.
     resume: Arc<Mutex<Option<ResumeStore>>>,
+    /// What every session's output plays, for the visualizer.
+    scope: Arc<Scope>,
+    visualizer: Arc<Visualizer>,
 }
 
 impl std::fmt::Debug for Infrasonic {
@@ -192,6 +205,7 @@ impl Infrasonic {
             })?;
         let data_dir: PathBuf = data_dir.into();
         let settings = read_json(&data_dir.join(SETTINGS_FILE)).unwrap_or_default();
+        let scope = Scope::new();
         Ok(Arc::new(Self {
             rt,
             data_dir,
@@ -203,6 +217,12 @@ impl Infrasonic {
             equalizer: Mutex::new(None),
             speed: Mutex::new(1.0),
             resume: Arc::new(Mutex::new(None)),
+            visualizer: {
+                let v = Arc::new(Visualizer::new(Arc::clone(&scope)));
+                crate::android::set_visualizer(&v);
+                v
+            },
+            scope,
         }))
     }
 
@@ -257,7 +277,7 @@ impl Infrasonic {
             info,
             &profile.name,
             settings.to_config(),
-            self.output.factory(),
+            self.output.factory(&self.scope),
         );
         session.set_cache(Some(Arc::new(AudioCache::new(
             &self.cache_dir,
@@ -1258,5 +1278,45 @@ impl Infrasonic {
             })?;
         }
         Ok(())
+    }
+}
+
+/// The music visualizer. It renders into the Surface the app attaches through
+/// `VisualizerSurface` (crates/ffi/src/android.rs) and shows what the player plays.
+#[uniffi::export]
+impl Infrasonic {
+    /// Read presets from these collection directories (each with `presets/` and `textures/`;
+    /// missing ones are skipped). Scans them, so call it off the main thread. Returns the
+    /// number of presets found.
+    pub fn visualizer_set_collections(&self, roots: Vec<String>) -> u32 {
+        let roots: Vec<PathBuf> = roots.into_iter().map(PathBuf::from).collect();
+        let collections = infrasonic_visualizer::Collections::scan(&roots);
+        let n = u32::try_from(collections.presets().len()).unwrap_or(u32::MAX);
+        self.visualizer.set_collections(collections);
+        n
+    }
+
+    pub fn visualizer_set_settings(&self, settings: VisualizerSettings) {
+        self.visualizer.set_settings(settings.to_visualizer());
+    }
+
+    /// Blend to the next (random) preset.
+    pub fn visualizer_next(&self) {
+        self.visualizer.next();
+    }
+
+    /// Back to the preset before.
+    pub fn visualizer_previous(&self) {
+        self.visualizer.previous();
+    }
+
+    /// Name of the preset on screen.
+    pub fn visualizer_preset(&self) -> Option<String> {
+        self.visualizer.current_preset()
+    }
+
+    /// Why the visualizer stopped or could not start (no usable graphics device, ...).
+    pub fn visualizer_error(&self) -> Option<String> {
+        self.visualizer.error()
     }
 }
