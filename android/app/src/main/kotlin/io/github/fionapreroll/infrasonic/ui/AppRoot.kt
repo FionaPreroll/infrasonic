@@ -88,6 +88,8 @@ import io.github.fionapreroll.infrasonic.ui.screens.ServerEditScreen
 import io.github.fionapreroll.infrasonic.ui.screens.ServersScreen
 import io.github.fionapreroll.infrasonic.ui.screens.SettingsScreen
 import io.github.fionapreroll.infrasonic.ui.screens.EqualizerScreen
+import io.github.fionapreroll.infrasonic.ui.screens.PresetBundleDialog
+import io.github.fionapreroll.infrasonic.ui.screens.VisualizerScreen
 import io.github.fionapreroll.infrasonic.ui.screens.SharesScreen
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -130,6 +132,7 @@ object Routes {
     const val JUKEBOX = "jukebox"
     const val SETTINGS = "settings"
     const val EQUALIZER = "equalizer"
+    const val VISUALIZER = "visualizer"
     const val NEW_SERVER = "new"
     private fun e(s: String) = Uri.encode(s)
     fun server(id: String) = "server/${e(id)}"
@@ -182,10 +185,11 @@ fun AppRoot() {
         }
     }
     UpdateDialog()
+    PresetBundleDialog()
     CompositionLocalProvider(LocalNav provides nav) {
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route ?: ""
-        val fullScreen = route == Routes.NOW || route.startsWith("server/")
+        val fullScreen = route == Routes.NOW || route == Routes.VISUALIZER || route.startsWith("server/")
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
@@ -246,6 +250,7 @@ fun AppRoot() {
                     composable(Routes.JUKEBOX) { JukeboxScreen() }
                     composable(Routes.SETTINGS) { SettingsScreen() }
                     composable(Routes.EQUALIZER) { EqualizerScreen() }
+                    composable(Routes.VISUALIZER) { VisualizerScreen() }
                 }
             }
         }

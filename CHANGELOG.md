@@ -77,6 +77,10 @@ Unreleased. How versions are made is in "Changelog and versions" in the README.
 - Android: long lists get a fast scroller: a thumb on the right edge to drag anywhere in the
   list, with the current letter in a bubble for artists, genres, folders and albums by name or
   artist.
+- Android: a visualizer (the button in the player) shows MilkDrop presets that follow what
+  plays, without the microphone permission. 24 presets come with the app; the full Cream of
+  the Crop collection (about 9,000 presets, 31 MB) is downloaded only on request in Settings ›
+  Visualizer, where a check for newer collections can also be switched on.
 
 ### Changed
 

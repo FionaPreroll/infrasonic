@@ -32,6 +32,7 @@ import io.github.fionapreroll.infrasonic.playback.PlaybackService
 import io.github.fionapreroll.infrasonic.playback.reason
 import io.github.fionapreroll.infrasonic.playback.songsForQuery
 import io.github.fionapreroll.infrasonic.update.AppUpdates
+import io.github.fionapreroll.infrasonic.visualizer.Presets
 import kotlinx.coroutines.launch
 import io.github.fionapreroll.infrasonic.widget.PlayerWidget
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -51,6 +52,7 @@ class MainActivity : AppCompatActivity() {
         handle(intent)
         if (savedInstanceState == null) {
             AppUpdates.onStart(applicationContext)
+            Presets.onStart(applicationContext)
             FavoriteDownloads.schedule(applicationContext)
             publishShortcuts()
         }

@@ -96,6 +96,13 @@ android {
     // "github" installs new versions of itself from the release android-latest, if the user agrees
     // (src/github/). "store" is for Google Play and F-Droid, which bring updates themselves: no
     // update check and no permission to install apps (src/store/).
+    // Preset collections for the visualizer: the releases of the Lactea fork (opt-in download, src/main/…/visualizer).
+    defaultConfig.buildConfigField(
+        "String",
+        "PRESETS_URL",
+        "\"" + (System.getenv("INFRASONIC_PRESETS_URL") ?: "https://github.com/FionaPreroll/lactea/releases") + "\"",
+    )
+
     flavorDimensions += "channel"
     productFlavors {
         create("github") {

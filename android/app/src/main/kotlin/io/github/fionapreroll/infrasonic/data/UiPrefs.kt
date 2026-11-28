@@ -78,4 +78,13 @@ class UiPrefs(context: Context) {
     /** GitHub build: look for a newer build at every start; asked once at the first start. */
     val checkUpdates = boolPref("check_updates", false)
     val askedUpdates = boolPref("asked_updates", false)
+
+    /** Version of the downloaded preset collection, 0 = only the starters shipped in the app. */
+    val visualizerBundle = intPref("visualizer_bundle", 0)
+
+    /** Look for a newer preset collection at every start (off until the user turns it on). */
+    val visualizerUpdates = boolPref("visualizer_updates", false)
+
+    /** Seconds a preset stays on screen, 0 = until swiped. */
+    val visualizerSeconds = intPref("visualizer_seconds", 30)
 }

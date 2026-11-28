@@ -25,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
@@ -53,6 +55,8 @@ import io.github.fionapreroll.infrasonic.ui.Routes
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
 import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
+import io.github.fionapreroll.infrasonic.visualizer.BundleState
+import io.github.fionapreroll.infrasonic.visualizer.Presets
 import kotlinx.coroutines.launch
 
 private val bitRates = listOf(0, 320, 256, 192, 160, 128, 96, 64)
@@ -269,6 +273,9 @@ fun SettingsScreen() {
             }
 
             HorizontalDivider()
+            VisualizerSection()
+
+            HorizontalDivider()
             SectionTitle(stringResource(R.string.about))
             ListItem(
                 headlineContent = { Text("infrasonic ${BuildConfig.VERSION_NAME}") },
@@ -291,6 +298,60 @@ fun SettingsScreen() {
 }
 
 private enum class Clear { Songs, Covers }
+
+/** Presets of the visualizer: the full collection on request, and whether to look for newer ones. */
+@Composable
+private fun VisualizerSection() {
+    val context = LocalContext.current.applicationContext
+    val prefs = Graph.prefs
+    val installed by Presets.installed.collectAsState()
+    val count by Presets.count.collectAsState()
+    val state by Presets.state.collectAsState()
+    val updates by prefs.visualizerUpdates.flow.collectAsState()
+    val seconds by prefs.visualizerSeconds.flow.collectAsState()
+    var removing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { Presets.prepare(context) }
+    SectionTitle(stringResource(R.string.visualizer))
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.visualizer_presets)) },
+        supportingContent = {
+            Text(
+                if (installed > 0) {
+                    stringResource(R.string.visualizer_full, pluralStringResource(R.plurals.visualizer_presets_count, count, count))
+                } else {
+                    pluralStringResource(R.plurals.visualizer_starters, count, count)
+                },
+            )
+        },
+    )
+    if (installed == 0) {
+        ListItem(
+            modifier = Modifier.clickable(enabled = state == BundleState.Idle || state == BundleState.Failed) {
+                Presets.check(context, manual = true)
+            },
+            headlineContent = { Text(stringResource(R.string.visualizer_download)) },
+            supportingContent = { Text(stringResource(R.string.visualizer_download_hint)) },
+        )
+    } else {
+        ListItem(
+            modifier = Modifier.clickable { removing = true },
+            headlineContent = { Text(stringResource(R.string.visualizer_remove)) },
+        )
+    }
+    Toggle(stringResource(R.string.visualizer_updates), stringResource(R.string.visualizer_updates_hint), updates) {
+        prefs.visualizerUpdates.value = it
+        if (it) Presets.check(context, manual = false)
+    }
+    Choice(
+        stringResource(R.string.visualizer_change),
+        listOf(15, 30, 60, 120, 0),
+        seconds,
+        { if (it == 0) stringResource(R.string.visualizer_by_hand) else stringResource(R.string.visualizer_every, it) },
+    ) { prefs.visualizerSeconds.value = it }
+    if (removing) {
+        ConfirmDialog(stringResource(R.string.visualizer_remove), { removing = false }) { Presets.remove(context) }
+    }
+}
 
 @Composable
 private fun Toggle(title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit) {
