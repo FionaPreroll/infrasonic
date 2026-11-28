@@ -14,6 +14,11 @@ arbitrary = { version = "1", features = ["derive"] }
 infrasonic-subsonic = { path = "../crates/subsonic" }
 infrasonic-engine = { path = "../crates/engine", default-features = false }
 infrasonic-core = { path = "../crates/core", default-features = false }
+# The Lactea fork the visualizer renders with (crates/visualizer/Cargo.toml), at the same commit.
+lactea-abi = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
+lactea-eel = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
+lactea-hlsl = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
+lactea-preset = { git = "https://github.com/FionaPreroll/lactea", rev = "263d0a52036164e6b135c99f4700bb41a3df1e21" }
 
 # Not part of the main workspace: cargo-fuzz needs nightly and sanitizer flags.
 [workspace]
@@ -56,6 +61,13 @@ bench = false
 [[bin]]
 name = "stream_reader"
 path = "fuzz_targets/stream_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "preset"
+path = "fuzz_targets/preset.rs"
 test = false
 doc = false
 bench = false

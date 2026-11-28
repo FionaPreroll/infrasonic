@@ -36,8 +36,16 @@ seed_responses() {
   printf '\x08{"subsonic-response":{"status":"ok","version":"1.16.1","playQueue":{"entry":[{"id":"3","title":"C"}],"current":"3","position":1500}}}' > "$dir/queue"
 }
 
+# The starter presets the app ships.
+seed_presets() {
+  local dir=corpus/preset
+  mkdir -p "$dir"
+  find ../android/app/src/main/assets/visualizer/presets -name '*.milk' -exec cp {} "$dir/" \;
+}
+
 seed_decode
 seed_responses
+seed_presets
 for t in "${TARGETS[@]}"; do
   echo "== $t ($SECS s)"
   cargo +nightly fuzz run "$t" -- -max_total_time="$SECS" -rss_limit_mb=2048 -timeout=10
