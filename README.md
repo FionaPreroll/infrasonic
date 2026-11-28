@@ -1,5 +1,8 @@
 # infrasonic
 
+[![CI](https://github.com/FionaPreroll/infrasonic/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FionaPreroll/infrasonic/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/FionaPreroll/infrasonic/graph/badge.svg?branch=main)](https://app.codecov.io/gh/FionaPreroll/infrasonic)
+
 A music player for [Subsonic](http://www.subsonic.org/pages/api.jsp) and
 [OpenSubsonic](https://opensubsonic.netlify.app/) servers such as Navidrome and gonic, written in
 Rust. It comes as a terminal player, the successor of
