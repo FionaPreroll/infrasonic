@@ -529,6 +529,8 @@ struct Worker {
     /// Single-threaded mode: loader work goes to `deferred` instead of threads.
     pump: bool,
     deferred: VecDeque<Deferred>,
+    /// The track that should play is being opened (or sought); playback starts once it is.
+    opening: bool,
 }
 
 impl Worker {
@@ -594,11 +596,26 @@ impl Worker {
             last_resume: Instant::now(),
             pump: false,
             deferred: VecDeque::new(),
+            opening: false,
         }
     }
 
-    fn emit(&self, e: Event) {
+    /// Send an event. The snapshot is brought up to date first: frontends read it when an
+    /// event arrives (Android asks for the state on `StateChanged`), and a snapshot from
+    /// before the change would stay their view until the next event.
+    fn emit(&mut self, e: Event) {
+        self.publish();
         let _ = self.events.send(e);
+    }
+
+    /// The state while the track that should play is being opened: a paused player stays
+    /// paused (and can be told to play), one that should play waits for data.
+    fn opening_state(&self) -> PlayState {
+        if self.want_pause {
+            PlayState::Paused
+        } else {
+            PlayState::Buffering
+        }
     }
 
     fn set_state(&mut self, s: PlayState) {
@@ -721,8 +738,7 @@ impl Worker {
             Command::Play => self.play(),
             Command::Pause => self.pause(true),
             Command::TogglePause => match self.state {
-                PlayState::Playing => self.pause(true),
-                PlayState::Buffering => self.pause(!self.want_pause),
+                PlayState::Playing | PlayState::Buffering => self.pause(true),
                 PlayState::Paused | PlayState::Stopped => self.play(),
             },
             Command::Stop => self.stop(),
@@ -895,6 +911,7 @@ impl Worker {
         self.tail.clear();
         self.mixing = None;
         self.pause_at = None;
+        self.opening = false;
         self.shared.set_input_ended(false);
     }
 
@@ -927,7 +944,8 @@ impl Worker {
         }
         self.position = position.max(0.0);
         self.duration = entry.track.duration;
-        self.set_state(PlayState::Buffering);
+        self.opening = true;
+        self.set_state(self.opening_state());
         self.spawn_open(entry, Purpose::Play, position.max(0.0));
     }
 
@@ -1058,6 +1076,7 @@ impl Worker {
                 if self.current_uid != Some(l.uid) {
                     return;
                 }
+                self.opening = false;
                 match l.result {
                     Ok(dec) => {
                         self.failures_in_row = 0;
@@ -1241,7 +1260,11 @@ impl Worker {
             PlayState::Paused => {
                 self.want_pause = false;
                 self.shared.set_paused(false);
-                self.set_state(PlayState::Playing);
+                self.set_state(if self.opening {
+                    PlayState::Buffering
+                } else {
+                    PlayState::Playing
+                });
             }
             PlayState::Buffering => {
                 self.want_pause = false;
@@ -1258,8 +1281,9 @@ impl Worker {
         self.want_pause = p;
         self.shared.set_paused(p);
         match self.state {
-            PlayState::Playing if p => self.set_state(PlayState::Paused),
-            PlayState::Paused if !p => self.set_state(PlayState::Playing),
+            // Also while the track is still being opened: a pause shows at once.
+            PlayState::Playing | PlayState::Buffering if p => self.set_state(PlayState::Paused),
+            PlayState::Paused if !p => self.play(),
             _ => {}
         }
     }
@@ -1302,7 +1326,8 @@ impl Worker {
         self.reset_pipeline();
         self.shared.request_fade_in();
         self.position = to;
-        self.set_state(PlayState::Buffering);
+        self.opening = true;
+        self.set_state(self.opening_state());
         self.emit_position();
         match dec {
             Some(d) => self.spawn_seek(uid, d, to),
@@ -1574,7 +1599,8 @@ impl Worker {
 
     /// The output device went away or its stream must be built again (e.g. another sample
     /// rate): open the output again, on the default device if that one is gone, and go on
-    /// where playback was. Gives up if the device keeps failing.
+    /// where playback was, paused if it was paused. The open decoder carries on, so a song
+    /// that streams is not fetched again. Gives up if the device keeps failing.
     fn recover_output(&mut self) {
         let now = Instant::now();
         self.recoveries
@@ -1589,7 +1615,16 @@ impl Worker {
             Some(index) if self.recoveries.len() < MAX_RECOVERIES => {
                 self.recoveries.push_back(now);
                 tracing::info!("audio output failed, opening it again at {position:.1} s");
-                self.play_index(index, position, self.want_pause);
+                if !self.ensure_output() {
+                    self.stop();
+                    return;
+                }
+                self.shared.set_paused(self.want_pause);
+                if self.current_uid.is_some() {
+                    self.seek(position);
+                } else {
+                    self.play_index(index, position, self.want_pause);
+                }
             }
             _ => {
                 self.emit(Event::Error("audio device lost".into()));

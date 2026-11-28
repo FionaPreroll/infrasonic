@@ -284,15 +284,18 @@ fn transport_commands() {
     );
 
     e.send(Command::Seek(3.0));
-    wait_for(
+    let seen = wait_for(
         &e,
         Duration::from_secs(2),
         |ev| matches!(ev, Event::Position { position, .. } if (*position - 3.0).abs() < 0.05),
     );
-    // Seek keeps the pause state.
-    wait_for(&e, Duration::from_secs(2), |ev| {
-        *ev == Event::StateChanged(PlayState::Paused)
-    });
+    // Seek keeps the pause state, also while the decoder seeks.
+    assert!(
+        !seen.iter().any(|ev| matches!(ev, Event::StateChanged(_))),
+        "{seen:?}"
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(e.snapshot().state, PlayState::Paused);
     e.send(Command::TogglePause);
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Playing)
@@ -314,12 +317,169 @@ fn transport_commands() {
     wait_for(&e, Duration::from_secs(2), |ev| {
         *ev == Event::StateChanged(PlayState::Stopped)
     });
-    // The snapshot is published a moment after the event (slow runners notice).
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while e.snapshot().position != 0.0 && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    // The snapshot is up to date when the event arrives.
+    assert_eq!(e.snapshot().state, PlayState::Stopped);
     assert_eq!(e.snapshot().position, 0.0);
+}
+
+/// Frontends read the snapshot when an event arrives (the Android app does); it must not
+/// trail the event, or a state such as "buffering" would stay their view.
+#[test]
+fn snapshot_is_current_when_the_event_arrives() {
+    for _ in 0..20 {
+        let e = engine(1.0, None);
+        e.send(Command::SetQueue {
+            tracks: sine_album(),
+            start: 0,
+            position: 1.0,
+            play: true,
+        });
+        wait_for(&e, Duration::from_secs(5), |ev| {
+            *ev == Event::StateChanged(PlayState::Playing)
+        });
+        assert_eq!(e.snapshot().state, PlayState::Playing);
+        e.send(Command::Pause);
+        wait_for(&e, Duration::from_secs(2), |ev| {
+            *ev == Event::StateChanged(PlayState::Paused)
+        });
+        assert_eq!(e.snapshot().state, PlayState::Paused);
+    }
+}
+
+/// Files that take a while to open, like a song that starts streaming.
+fn slow_provider(
+    delay: Duration,
+    opened: Arc<AtomicUsize>,
+) -> Arc<dyn infrasonic_engine::SourceProvider> {
+    let files = file_provider();
+    Arc::new(move |t: &Track| -> Result<Box<dyn MediaSource>, Error> {
+        opened.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(delay);
+        files.open(t)
+    })
+}
+
+#[test]
+fn pause_while_opening_shows_at_once() {
+    let opened = Arc::new(AtomicUsize::new(0));
+    let e = Engine::new(
+        EngineConfig::default(),
+        slow_provider(Duration::from_millis(800), opened),
+        Box::new(NullOutputFactory::new(SPEC, 1.0)),
+    );
+    e.send(Command::SetQueue {
+        tracks: sine_album(),
+        start: 0,
+        position: 0.0,
+        play: true,
+    });
+    wait_for(&e, Duration::from_secs(2), |ev| {
+        *ev == Event::StateChanged(PlayState::Buffering)
+    });
+    let asked = Instant::now();
+    e.send(Command::Pause);
+    wait_for(&e, Duration::from_secs(2), |ev| {
+        *ev == Event::StateChanged(PlayState::Paused)
+    });
+    assert!(
+        asked.elapsed() < Duration::from_millis(500),
+        "the pause waited for the song"
+    );
+    // Paused once open, without playing a moment.
+    std::thread::sleep(Duration::from_millis(1200));
+    let s = e.snapshot();
+    assert_eq!(s.state, PlayState::Paused);
+    assert_eq!(s.position, 0.0);
+    // Play goes on.
+    e.send(Command::TogglePause);
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::Position { position, .. } if *position > 0.3),
+    );
+    assert_eq!(e.snapshot().state, PlayState::Playing);
+}
+
+/// The Bluetooth speaker is switched off: the app pauses, then the device goes away. The
+/// engine opens another output, stays paused where it was, without a "buffering" state and
+/// without fetching the song again, and plays on when asked.
+#[test]
+fn lost_device_while_paused_stays_paused() {
+    let last = Arc::new(Mutex::new(None::<Arc<OutputShared>>));
+    let opened = Arc::new(AtomicUsize::new(0));
+    let out = FlakyOutput {
+        inner: NullOutputFactory::new(SPEC, 1.0),
+        last: last.clone(),
+        opened: opened.clone(),
+    };
+    let songs = Arc::new(AtomicUsize::new(0));
+    let config = EngineConfig {
+        preload_next: false,
+        ..EngineConfig::default()
+    };
+    let e = Engine::new(
+        config,
+        slow_provider(Duration::from_millis(300), songs.clone()),
+        Box::new(out),
+    );
+    e.send(Command::SetQueue {
+        tracks: sine_album(),
+        start: 1,
+        position: 0.0,
+        play: true,
+    });
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::Position { position, .. } if *position > 1.0),
+    );
+    e.send(Command::Pause);
+    wait_for(&e, Duration::from_secs(2), |ev| {
+        *ev == Event::StateChanged(PlayState::Paused)
+    });
+    std::thread::sleep(Duration::from_millis(100));
+    let at = e.snapshot().position;
+    if let Some(s) = last.lock().as_ref() {
+        s.mark_failed();
+    }
+    // Long enough for the song to be opened again, if it were.
+    let until = Instant::now() + Duration::from_secs(2);
+    let mut seen = Vec::new();
+    while Instant::now() < until {
+        if let Ok(ev) = e.events().recv_timeout(Duration::from_millis(20)) {
+            seen.push(ev);
+        }
+    }
+    assert_eq!(
+        opened.load(Ordering::SeqCst),
+        2,
+        "the output was not opened again"
+    );
+    assert!(
+        !seen
+            .iter()
+            .any(|ev| matches!(ev, Event::StateChanged(_) | Event::Error(_))),
+        "{seen:?}"
+    );
+    let s = e.snapshot();
+    assert_eq!(s.state, PlayState::Paused);
+    assert_eq!(s.current_index, Some(1));
+    assert!(
+        (s.position - at).abs() < 0.05,
+        "position {} instead of {at}",
+        s.position
+    );
+    assert_eq!(songs.load(Ordering::SeqCst), 1, "the song was opened again");
+
+    e.send(Command::Play);
+    wait_for(&e, Duration::from_secs(2), |ev| {
+        *ev == Event::StateChanged(PlayState::Playing)
+    });
+    wait_for(
+        &e,
+        Duration::from_secs(5),
+        |ev| matches!(ev, Event::Position { position, .. } if *position > at + 0.5),
+    );
 }
 
 #[test]
