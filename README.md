@@ -222,6 +222,8 @@ cargo test --workspace                           # unit and mock-server tests
 scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless --tests
                                                  # Navidrome and gonic in Docker, incl. headless TUI test
 INFRASONIC_SOAK_SECS=600 scripts/e2e-servers.sh cargo test --release -p infrasonic-e2e --test soak -- --nocapture
+scripts/e2e-servers.sh cargo llvm-cov --workspace --html
+                                                 # coverage of all of them, needs cargo-llvm-cov
 scripts/fuzz.sh 60                               # all fuzz targets, needs nightly and cargo-fuzz
 scripts/web.sh && python3 -m http.server 8098 --bind 127.0.0.1 --directory target/web &
 scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ chromium [--mobile]
@@ -229,7 +231,8 @@ scripts/e2e-servers.sh node crates/web/tests/browser.mjs http://127.0.0.1:8098/ 
 ```
 
 The test music in `testdata/music` is generated (see `testdata/README.md`). CI runs formatting,
-clippy, tests on Linux, macOS and Windows, the end-to-end tests, the web player in Chromium, Firefox, WebKit and mobile Chromium, the Android
+clippy, tests on Linux, macOS and Windows, the end-to-end tests with coverage for
+[Codecov](https://app.codecov.io/gh/FionaPreroll/infrasonic), the web player in Chromium, Firefox, WebKit and mobile Chromium, the Android
 app (build, lint, Kotlin tests, emulator UI test) and `cargo deny`; fuzzing and a 30 minute soak run nightly.
 
 ### Branches and pull requests

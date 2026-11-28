@@ -49,19 +49,32 @@ jobs:
       - run: cargo test --workspace
       - run: cargo build --release -p infrasonic
 
+  # Every Rust test, the end-to-end ones included, measured for coverage and sent to Codecov.
   e2e:
     name: End-to-end (Navidrome, gonic)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # Codecov upload over OIDC, no token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
-      - run: rustup show
+      - run: rustup component add llvm-tools
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
+        with:
+          tool: cargo-llvm-cov
       - name: Pull server images
         run: docker pull deluan/navidrome:latest && docker pull sentriz/gonic:latest
-      - run: cargo test --no-run -p infrasonic-e2e -p infrasonic -p infrasonic-headless -p infrasonic-ffi --tests
-      - run: scripts/e2e-servers.sh cargo test -p infrasonic-e2e -p infrasonic -p infrasonic-headless -p infrasonic-ffi --tests
+      - run: scripts/e2e-servers.sh cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
+        with:
+          files: lcov.info
+          disable_search: true
+          # Pull requests from forks get no OIDC token; Codecov takes theirs without one.
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          fail_ci_if_error: true
 
   web:
     name: Web player (${{ matrix.browser }})
