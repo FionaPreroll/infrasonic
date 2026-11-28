@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
-@file:OptIn(ExperimentalLayoutApi::class)
-
 package io.github.fionapreroll.infrasonic.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
@@ -28,39 +30,40 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.fionapreroll.infrasonic.R
 import io.github.fionapreroll.infrasonic.data.Graph
-import io.github.fionapreroll.infrasonic.playback.EQ_MAX_DB
 import io.github.fionapreroll.infrasonic.playback.EqPreset
+import io.github.fionapreroll.infrasonic.playback.EqualizerManager
+import io.github.fionapreroll.infrasonic.playback.FLAT
 import io.github.fionapreroll.infrasonic.playback.OutputDevice
 import io.github.fionapreroll.infrasonic.playback.OutputKind
-import io.github.fionapreroll.infrasonic.playback.FLAT
+import io.github.fionapreroll.infrasonic.playback.Tone
 import io.github.fionapreroll.infrasonic.ui.Screen
 import io.github.fionapreroll.infrasonic.ui.components.ConfirmDialog
-import io.github.fionapreroll.infrasonic.ui.components.SectionTitle
+import io.github.fionapreroll.infrasonic.ui.components.EQ_BAND_LABELS
+import io.github.fionapreroll.infrasonic.ui.components.EqGraph
+import io.github.fionapreroll.infrasonic.ui.components.EqKnob
+import io.github.fionapreroll.infrasonic.ui.components.EqSlider
 import io.github.fionapreroll.infrasonic.ui.components.TextInputDialog
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToInt
-
-private val bandLabels = listOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+import io.github.fionapreroll.infrasonic.ui.components.dbText
 
 @Composable
 fun presetName(p: EqPreset): String = if (!p.builtIn) {
@@ -103,20 +106,52 @@ private fun deviceIcon(d: OutputDevice): ImageVector = when (d.kind) {
     OutputKind.Other -> Icons.Default.Speaker
 }
 
-private fun db(v: Float): String {
-    val r = (v * 2).roundToInt() / 2f
-    val s = if (abs(r - r.roundToInt()) < 0.01f) r.roundToInt().toString() else String.format(Locale.getDefault(), "%.1f", r)
-    return if (r > 0) "+$s dB" else "$s dB"
+
+@Composable
+private fun toneLabel(t: Tone): String = stringResource(
+    when (t) {
+        Tone.Bass -> R.string.eq_tone_bass
+        Tone.Mid -> R.string.eq_tone_mid
+        Tone.Treble -> R.string.eq_tone_treble
+    },
+)
+
+/** A rounded panel of the equalizer screen, with an optional title. */
+@Composable
+private fun Panel(title: String?, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(Modifier.padding(vertical = 12.dp)) {
+            if (title != null) {
+                Text(
+                    title,
+                    Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            content()
+        }
+    }
 }
 
 @Composable
-fun EqualizerScreen() {
-    val eq = Graph.equalizer
+fun EqualizerScreen(eq: EqualizerManager = Graph.equalizer) {
     val st by eq.state.collectAsState()
     val cur = st.current
+    val gains = cur.levels.gains
     var saving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<EqPreset?>(null) }
+    // What is being set right now, so that the graph and the sliders show it together.
+    var activeBand by remember { mutableStateOf<Int?>(null) }
+    var activeTone by remember { mutableStateOf<Tone?>(null) }
+    // Bands and level of the tone control being turned, when it started.
+    var toneStart by remember { mutableStateOf<Pair<List<Float>, Float>?>(null) }
     val preset = st.preset
+    val itemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
 
     Screen(stringResource(R.string.equalizer), actions = {
         IconButton(onClick = { eq.selectPreset(FLAT) }) { Icon(Icons.Default.RestartAlt, stringResource(R.string.eq_reset)) }
@@ -125,60 +160,125 @@ fun EqualizerScreen() {
             IconButton(onClick = { deleting = preset }) { Icon(Icons.Default.Delete, stringResource(R.string.eq_delete_preset)) }
         }
     }) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            ListItem(
-                modifier = Modifier.clickable { eq.setEnabled(!cur.enabled) },
-                headlineContent = { Text(stringResource(R.string.equalizer)) },
-                supportingContent = {
-                    Text(
-                        if (st.perDevice) {
-                            stringResource(R.string.eq_for_device, deviceLabel(st.device))
-                        } else {
-                            stringResource(R.string.eq_for_all)
-                        },
-                    )
-                },
-                leadingContent = { Icon(deviceIcon(st.device), null) },
-                trailingContent = { Switch(cur.enabled, { eq.setEnabled(it) }) },
-            )
-            ListItem(
-                modifier = Modifier.clickable { eq.setPerDevice(!st.perDevice) },
-                headlineContent = { Text(stringResource(R.string.eq_per_device)) },
-                supportingContent = { Text(stringResource(R.string.eq_per_device_hint)) },
-                trailingContent = { Switch(st.perDevice, { eq.setPerDevice(it) }) },
-            )
-            HorizontalDivider()
-            SectionTitle(stringResource(R.string.eq_presets))
-            FlowRow(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (p in st.presets) {
-                    FilterChip(
-                        selected = cur.enabled && p.id == cur.preset,
-                        onClick = { eq.selectPreset(p.id) },
-                        label = { Text(presetName(p)) },
-                    )
-                }
-                if (cur.preset == null) {
-                    FilterChip(selected = cur.enabled, onClick = { saving = true }, label = { Text(stringResource(R.string.eq_custom)) })
-                }
-            }
-            HorizontalDivider(Modifier.padding(top = 8.dp))
-            SectionTitle(stringResource(R.string.eq_bands))
-            Band(stringResource(R.string.eq_preamp), cur.levels.preamp, cur.enabled) { eq.setPreamp(it) }
-            cur.levels.gains.forEachIndexed { i, g ->
-                Band("${bandLabels[i]} Hz", g, cur.enabled) { eq.setGain(i, it) }
-            }
-            val headroom = cur.levels.headroom
-            if (cur.enabled && headroom < cur.levels.preamp) {
-                Text(
-                    stringResource(R.string.eq_headroom, db(headroom - cur.levels.preamp)),
-                    Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+            Panel(null) {
+                ListItem(
+                    modifier = Modifier.clickable { eq.setEnabled(!cur.enabled) },
+                    colors = itemColors,
+                    headlineContent = { Text(stringResource(R.string.equalizer)) },
+                    supportingContent = {
+                        Text(
+                            if (st.perDevice) {
+                                stringResource(R.string.eq_for_device, deviceLabel(st.device))
+                            } else {
+                                stringResource(R.string.eq_for_all)
+                            },
+                        )
+                    },
+                    leadingContent = { Icon(deviceIcon(st.device), null) },
+                    trailingContent = { Switch(cur.enabled, { eq.setEnabled(it) }) },
+                )
+                HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                ListItem(
+                    modifier = Modifier.clickable { eq.setPerDevice(!st.perDevice) },
+                    colors = itemColors,
+                    headlineContent = { Text(stringResource(R.string.eq_per_device)) },
+                    supportingContent = { Text(stringResource(R.string.eq_per_device_hint)) },
+                    trailingContent = { Switch(st.perDevice, { eq.setPerDevice(it) }) },
                 )
             }
+
+            Panel(stringResource(R.string.eq_curve)) {
+                EqGraph(
+                    gains = gains,
+                    enabled = cur.enabled,
+                    active = activeBand,
+                    highlight = activeTone?.bands,
+                    onActive = { activeBand = it },
+                    onGain = { band, v -> eq.setGain(band, v) },
+                    description = stringResource(R.string.eq_curve_description),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                // Presets in a row; the selected one (or "Custom") is scrolled into view.
+                val chips = remember(st.presets, cur.preset) { (if (cur.preset == null) listOf(null) else emptyList()) + st.presets }
+                val row = rememberLazyListState()
+                LaunchedEffect(Unit) {
+                    val i = chips.indexOfFirst { it?.id == cur.preset }
+                    if (i > 0) row.scrollToItem(i, -48)
+                }
+                LazyRow(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    state = row,
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(chips, key = { it?.id ?: "" }) { p ->
+                        if (p == null) {
+                            FilterChip(selected = cur.enabled, onClick = { saving = true }, label = { Text(stringResource(R.string.eq_custom)) })
+                        } else {
+                            FilterChip(
+                                selected = cur.enabled && p.id == cur.preset,
+                                onClick = { eq.selectPreset(p.id) },
+                                label = { Text(presetName(p)) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Panel(stringResource(R.string.eq_tone)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    for (t in Tone.entries) {
+                        EqKnob(
+                            label = toneLabel(t),
+                            value = t.level(gains),
+                            enabled = cur.enabled,
+                            onActive = { on ->
+                                activeTone = if (on) t else null
+                                toneStart = if (on) gains to t.level(gains) else null
+                            },
+                            onTurn = { v ->
+                                val (from, level) = toneStart ?: (gains to t.level(gains))
+                                eq.setGains(t.turn(from, v - level))
+                            },
+                        )
+                    }
+                }
+            }
+
+            Panel(stringResource(R.string.eq_bands)) {
+                EqSlider(
+                    stringResource(R.string.eq_preamp),
+                    cur.levels.preamp,
+                    cur.enabled,
+                    active = false,
+                    onActive = {},
+                    onChange = { eq.setPreamp(it) },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+                HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                gains.forEachIndexed { i, g ->
+                    EqSlider(
+                        "${EQ_BAND_LABELS[i]} Hz",
+                        g,
+                        cur.enabled,
+                        active = activeBand == i || (activeTone?.let { it.weight(i) > 0f } ?: false),
+                        onActive = { on -> activeBand = if (on) i else null },
+                        onChange = { eq.setGain(i, it) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+                val headroom = cur.levels.headroom
+                if (cur.enabled && headroom < cur.levels.preamp) {
+                    Text(
+                        stringResource(R.string.eq_headroom, dbText(headroom - cur.levels.preamp)),
+                        Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -198,20 +298,5 @@ fun EqualizerScreen() {
             eq.deletePreset(p.id)
             deleting = null
         }
-    }
-}
-
-@Composable
-private fun Band(label: String, value: Float, enabled: Boolean, onChange: (Float) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(72.dp), style = MaterialTheme.typography.bodyMedium)
-        Slider(
-            value = value,
-            onValueChange = { onChange((it * 2).roundToInt() / 2f) },
-            valueRange = -EQ_MAX_DB..EQ_MAX_DB,
-            enabled = enabled,
-            modifier = Modifier.weight(1f).semantics { contentDescription = label },
-        )
-        Text(db(value), Modifier.width(64.dp).padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
     }
 }

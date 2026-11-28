@@ -207,6 +207,12 @@
     <string name="eq_per_device_hint">Headphones, Bluetooth devices and the speaker each keep their own settings</string>
     <string name="eq_presets">Presets</string>
     <string name="eq_bands">Bands</string>
+    <string name="eq_curve">Frequency response</string>
+    <string name="eq_curve_description">Frequency response; drag a band\'s point up or down</string>
+    <string name="eq_tone">Tone</string>
+    <string name="eq_tone_bass">Bass</string>
+    <string name="eq_tone_mid">Mids</string>
+    <string name="eq_tone_treble">Treble</string>
     <string name="eq_preamp">Preamp</string>
     <string name="eq_reset">Reset</string>
     <string name="eq_save_preset">Save as preset</string>

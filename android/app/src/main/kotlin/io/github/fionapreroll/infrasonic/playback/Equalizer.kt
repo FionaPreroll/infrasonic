@@ -142,6 +142,13 @@ class EqualizerManager(
         }
     }
 
+    /** Set all bands at once (the tone controls move several). */
+    @Synchronized
+    fun setGains(gains: List<Float>) {
+        if (gains.size != EQ_BANDS) return
+        change { it.copy(preset = null, levels = it.levels.copy(gains = gains.map(::clamp))) }
+    }
+
     @Synchronized
     fun setPreamp(db: Float) = change { it.copy(preset = null, levels = it.levels.copy(preamp = clamp(db))) }
 

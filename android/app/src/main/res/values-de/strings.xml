@@ -206,6 +206,12 @@
     <string name="eq_per_device_hint">Kopfhörer, Bluetooth-Geräte und Lautsprecher behalten jeweils eigene Einstellungen</string>
     <string name="eq_presets">Presets</string>
     <string name="eq_bands">Bänder</string>
+    <string name="eq_curve">Frequenzgang</string>
+    <string name="eq_curve_description">Frequenzgang; den Punkt eines Bands nach oben oder unten ziehen</string>
+    <string name="eq_tone">Klang</string>
+    <string name="eq_tone_bass">Tiefen</string>
+    <string name="eq_tone_mid">Mitten</string>
+    <string name="eq_tone_treble">Höhen</string>
     <string name="eq_preamp">Vorverst.</string>
     <string name="eq_reset">Zurücksetzen</string>
     <string name="eq_save_preset">Als Preset speichern</string>

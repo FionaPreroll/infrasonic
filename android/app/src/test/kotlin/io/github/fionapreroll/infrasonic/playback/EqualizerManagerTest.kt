@@ -194,4 +194,18 @@ class EqualizerManagerTest {
             types.take(2).maxBy { AudioRoutes.priority(it) },
         )
     }
+
+    @Test
+    fun settingAllBandsAtOnce() {
+        val m = manager()
+        m.selectPreset("bass")
+        val gains = List(EQ_BANDS) { it - 4f + 20f * (if (it == 9) 1 else 0) }
+        m.setGains(gains)
+        val cur = m.state.value.current
+        assertNull("bands set by hand are no preset", cur.preset)
+        assertEquals(List(EQ_BANDS) { if (it == 9) EQ_MAX_DB else it - 4f }, cur.levels.gains)
+        assertEquals(cur.levels, sent.last())
+        m.setGains(listOf(1f))
+        assertEquals("a wrong number of bands is ignored", cur, m.state.value.current)
+    }
 }
